@@ -1,0 +1,14 @@
+domain: music
+dataset: LastFM360K
+interaction_col: play_count
+user_col: user_id
+item_col: song_id
+timestamp_col: timestamp
+content_cols:
+  - artist_name
+  - track_name
+  - tags
+min_interactions: 3
+train_ratio: 0.8
+val_ratio: 0.1
+test_ratio: 0.1

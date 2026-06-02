@@ -53,3 +53,15 @@ class Settings:
     LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 
 settings = Settings()
+
+def get_ratings_path(use_full: bool = False) -> str:
+    """
+    Always use ratings_small for dev.
+    Only switch to ratings.csv explicitly with use_full=True.
+    ratings.csv is 26M rows — NEVER load with pd.read_csv directly.
+    Always use PySpark for full dataset.
+    """
+    if use_full:
+        print("⚠️  Loading full ratings.csv (26M rows) — use PySpark only")
+        return "data/raw/ratings.csv"
+    return "data/raw/ratings_small.csv"

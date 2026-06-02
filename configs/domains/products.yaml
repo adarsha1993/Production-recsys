@@ -1,0 +1,15 @@
+domain: products
+dataset: AmazonReviews2023
+interaction_col: rating
+user_col: user_id
+item_col: asin
+timestamp_col: timestamp
+content_cols:
+  - title
+  - description
+  - category
+image_col: image_url
+min_interactions: 3
+train_ratio: 0.8
+val_ratio: 0.1
+test_ratio: 0.1

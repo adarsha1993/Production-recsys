@@ -68,3 +68,4 @@ deployment/docker/volumes/
 
 # ── Great Expectations ────────────────────────────
 great_expectations/uncommitted/
+/data
