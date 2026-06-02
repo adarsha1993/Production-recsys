@@ -1,0 +1,34 @@
+{
+  "movie_features": {
+    "entity": "movie_id",
+    "features": [
+      "title",
+      "text_soup",
+      "genres_list",
+      "vote_average",
+      "vote_count",
+      "popularity",
+      "budget",
+      "revenue",
+      "runtime",
+      "year",
+      "era",
+      "rating_count",
+      "rating_mean",
+      "log_rating_count"
+    ],
+    "source": "../../data/features/movie_features_rated.csv"
+  },
+  "user_features": {
+    "entity": "user_id",
+    "features": [
+      "rating_count",
+      "rating_mean",
+      "unique_movies",
+      "activity_tier",
+      "rating_tendency",
+      "top_genre"
+    ],
+    "source": "../../data/features/user_features.csv"
+  }
+}

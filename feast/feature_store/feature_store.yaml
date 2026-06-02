@@ -1,0 +1,8 @@
+offline_store:
+  type: file
+online_store:
+  connection_string: localhost:6379
+  type: redis
+project: production_recsys
+provider: local
+registry: feast/feature_store/registry.db
