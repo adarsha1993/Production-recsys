@@ -1,0 +1,13 @@
+domain: video
+dataset: KuaiRec
+interaction_col: watch_ratio
+user_col: user_id
+item_col: video_id
+timestamp_col: timestamp
+content_cols:
+  - tag_list
+  - video_type
+min_interactions: 5
+train_ratio: 0.8
+val_ratio: 0.1
+test_ratio: 0.1

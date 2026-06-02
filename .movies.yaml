@@ -1,0 +1,17 @@
+domain: movies
+dataset: MovieLens25M
+interaction_col: rating
+user_col: userId
+item_col: movieId
+timestamp_col: timestamp
+content_cols:
+  - genres
+  - overview
+  - keywords
+  - cast
+  - director
+image_col: poster_path
+min_interactions: 5
+train_ratio: 0.8
+val_ratio: 0.1
+test_ratio: 0.1
