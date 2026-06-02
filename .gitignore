@@ -20,7 +20,7 @@ build/
 .ipynb_checkpoints/
 *.ipynb_checkpoints
 
-# ── Data (raw and processed — use DVC instead) ────
+# ── Data (ALL data tracked by DVC not Git) ────────
 data/raw/
 data/processed/
 data/delta_lake/
@@ -68,4 +68,3 @@ deployment/docker/volumes/
 
 # ── Great Expectations ────────────────────────────
 great_expectations/uncommitted/
-/data
