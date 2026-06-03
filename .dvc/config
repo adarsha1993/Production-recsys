@@ -1,4 +1,7 @@
 [core]
-    remote = myremote
+    remote = s3remote
 ['remote "myremote"']
     url = s3://production-recsys-data/dvc-store
+['remote "s3remote"']
+    url = s3://production-recsys-data/dvc-store
+    region = us-east-1
