@@ -1,13 +1,18 @@
-domain: video
-dataset: KuaiRec
-interaction_col: watch_ratio
-user_col: user_id
-item_col: video_id
-timestamp_col: timestamp
 content_cols:
-  - tag_list
-  - video_type
-min_interactions: 5
-train_ratio: 0.8
-val_ratio: 0.1
-test_ratio: 0.1
+- category
+domain: video
+embed_dim: 64
+interaction_col: composite
+item_col: video_id
+min_interactions: 3
+model: grank
+n_layers: 2
+positive_threshold: 0.5
+signal_weights:
+  comment: 0.1
+  follow: 0.05
+  like: 0.15
+  share: 0.1
+  watch_ratio: 0.6
+timestamp_col: timestamp
+user_col: user_id

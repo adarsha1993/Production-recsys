@@ -1,43 +1,12 @@
-domain: movies
-dataset: MovieLens_TMDB_Kaggle
-
-# Primary files
-movies_metadata:  data/raw/movies_metadata.csv
-credits:          data/raw/credits.csv
-keywords:         data/raw/keywords.csv
-links:            data/raw/links.csv
-links_small:      data/raw/links_small.csv
-
-# Ratings — two versions
-ratings_dev:      data/raw/ratings_small.csv   # 100K — use for dev
-ratings_full:     data/raw/ratings.csv          # 26M  — use for training
-
-# Which to use right now
-active_ratings:   ratings_dev                   # switch to ratings_full in W3
-
-# Column names
-interaction_col:  rating
-user_col:         userId
-item_col:         movieId
-timestamp_col:    timestamp
-
-# Content columns for embeddings
 content_cols:
-  - genres
-  - overview
-  - keywords
-  - cast
-  - director
-  - tagline
-
-# Image
-image_col:        poster_path
-
-# Filtering
-min_ratings_per_user:  5
-min_ratings_per_movie: 5
-
-# Split ratios
-train_ratio:  0.8
-val_ratio:    0.1
-test_ratio:   0.1
+- genres
+domain: movies
+embed_dim: 128
+interaction_col: rating
+item_col: movieId
+min_interactions: 5
+model: hstu
+n_layers: 3
+positive_threshold: 3.5
+timestamp_col: timestamp
+user_col: userId
