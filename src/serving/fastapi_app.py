@@ -12,6 +12,7 @@ Features:
   → Request ID tracking
   → Redis caching (Day 31)
   → Kafka producer (Day 32)
+  → Prometheus metrics (Day 33)
 
 Usage:
   uvicorn src.serving.fastapi_app:app
@@ -33,13 +34,17 @@ from fastapi import (
     Header, status)
 from fastapi.middleware.cors import (
     CORSMiddleware)
-from fastapi.responses import JSONResponse
+from fastapi.responses import (
+    JSONResponse, Response)
 from pydantic import BaseModel, Field
 from typing import Optional, List
 from pathlib import Path
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
+from prometheus_client import (
+    Counter, Histogram, Gauge,
+    generate_latest, CONTENT_TYPE_LATEST)
 
 # ── Paths ─────────────────────────────────────────
 BASE = Path(__file__).parent.parent.parent
@@ -61,6 +66,44 @@ from src.serving.kafka_producer import (
 
 producer = InteractionProducer(
     bootstrap_servers='localhost:9092')
+
+# ── Prometheus Metrics ────────────────────────────
+rec_requests_total = Counter(
+    'rec_requests_total',
+    'Total recommendation requests',
+    ['model', 'cached', 'status'])
+
+rec_latency_seconds = Histogram(
+    'rec_latency_seconds',
+    'Recommendation latency in seconds',
+    ['endpoint'],
+    buckets=[.005, .01, .025, .05,
+             .1, .25, .5, 1.0, 2.5])
+
+cache_hits_total = Counter(
+    'cache_hits_total',
+    'Total Redis cache hits')
+
+cache_misses_total = Counter(
+    'cache_misses_total',
+    'Total Redis cache misses')
+
+active_users_gauge = Gauge(
+    'active_users_total',
+    'Number of users with cached recs')
+
+kafka_events_total = Counter(
+    'kafka_events_total',
+    'Total Kafka events sent',
+    ['topic', 'status'])
+
+model_info = Gauge(
+    'model_info',
+    'Model information',
+    ['model_name', 'version'])
+model_info.labels(
+    model_name='HSTU',
+    version='1.0.0').set(1)
 
 # ── Logging ───────────────────────────────────────
 logging.basicConfig(
@@ -155,11 +198,13 @@ app = FastAPI(
 Built with HSTU ranker (Meta MLPerf 2026).
 
 ### Endpoints
-- **POST /recommend** — Get personalised recommendations
-- **POST /feedback**  — Log user interaction
-- **GET  /health**    — Service health check
-- **GET  /metrics**   — Request metrics
-- **GET  /cache/stats** — Redis cache stats
+- **POST /recommend**    — Get recommendations
+- **POST /feedback**     — Log interaction
+- **GET  /health**       — Health check
+- **GET  /metrics**      — Request metrics
+- **GET  /prometheus**   — Prometheus metrics
+- **GET  /cache/stats**  — Redis stats
+- **GET  /kafka/stats**  — Kafka stats
 
 ### Authentication
 Include `X-API-Key` header with valid key.
@@ -269,10 +314,7 @@ async def root():
          response_model=HealthResponse,
          tags=["Operations"])
 async def health():
-    """
-    Service health check.
-    Kubernetes liveness probe.
-    """
+    """Kubernetes liveness probe."""
     bentoml_status = "unknown"
     try:
         async with httpx.AsyncClient() \
@@ -315,6 +357,18 @@ async def readiness():
         "timestamp": time.time()}
 
 
+@app.get("/prometheus",
+         tags=["Operations"])
+async def prometheus_metrics():
+    """
+    Prometheus metrics endpoint.
+    Scraped every 15s by Prometheus.
+    """
+    return Response(
+        content    = generate_latest(),
+        media_type = CONTENT_TYPE_LATEST)
+
+
 @app.post("/recommend",
           response_model=RecommendResponse,
           tags=["Recommendations"])
@@ -327,10 +381,6 @@ async def recommend(
     """
     Get personalised movie recommendations.
     Results cached in Redis for 1 hour.
-
-    - **user_id**: User to recommend for
-    - **top_k**: Number of recs (1-50)
-    - **include_scores**: Include scores
     """
     start      = time.time()
     request_id = getattr(
@@ -344,36 +394,45 @@ async def recommend(
         cached_recs = cache.get(body.user_id)
 
         if cached_recs is not None:
-            latency = (time.time()-start)*1000
+            latency = time.time() - start
             request_metrics['success'] += 1
             request_metrics['latencies']\
-                .append(latency)
+                .append(latency * 1000)
+
+            # Prometheus
+            cache_hits_total.inc()
+            rec_requests_total.labels(
+                model  = 'HSTU+Cache',
+                cached = 'true',
+                status = 'success').inc()
+            rec_latency_seconds.labels(
+                endpoint='/recommend'
+            ).observe(latency)
 
             log.info(
                 f"rid={request_id} "
                 f"user={body.user_id} "
                 f"CACHE HIT "
-                f"latency={latency:.1f}ms")
+                f"latency={latency*1000:.1f}ms")
 
             if not body.include_scores:
                 for r in cached_recs:
                     r['score'] = 0.0
 
-            # Log rec event to Kafka
             producer.send_recommendation_logged(
                 user_id    = body.user_id,
                 recs       = cached_recs,
-                model      = "HSTU+Cache",
-                latency_ms = latency,
+                model      = 'HSTU+Cache',
+                latency_ms = latency * 1000,
                 cached     = True)
 
             return RecommendResponse(
                 request_id      = request_id,
                 user_id         = body.user_id,
                 recommendations = cached_recs,
-                model           = "HSTU+Cache",
+                model           = 'HSTU+Cache',
                 latency_ms      = round(
-                    latency, 2),
+                    latency * 1000, 2),
                 n_recs          = len(
                     cached_recs),
                 cached          = True,
@@ -402,52 +461,68 @@ async def recommend(
         recs = data.get(
             "recommendations", [])
 
-        # ── Store in cache ────────────────
         cache.set(body.user_id, recs)
 
         if not body.include_scores:
             for rec in recs:
                 rec['score'] = 0.0
 
-        latency = (time.time()-start)*1000
+        latency = time.time() - start
         request_metrics['success'] += 1
         request_metrics['latencies']\
-            .append(latency)
+            .append(latency * 1000)
+
+        # Prometheus
+        cache_misses_total.inc()
+        rec_requests_total.labels(
+            model  = 'HSTU',
+            cached = 'false',
+            status = 'success').inc()
+        rec_latency_seconds.labels(
+            endpoint='/recommend'
+        ).observe(latency)
 
         log.info(
             f"rid={request_id} "
             f"user={body.user_id} "
             f"CACHE MISS "
             f"n_recs={len(recs)} "
-            f"latency={latency:.1f}ms")
+            f"latency={latency*1000:.1f}ms")
 
-        # Log rec event to Kafka
         producer.send_recommendation_logged(
             user_id    = body.user_id,
             recs       = recs,
-            model      = "HSTU",
-            latency_ms = latency,
+            model      = 'HSTU',
+            latency_ms = latency * 1000,
             cached     = False)
 
         return RecommendResponse(
             request_id      = request_id,
             user_id         = body.user_id,
             recommendations = recs,
-            model           = "HSTU",
+            model           = 'HSTU',
             latency_ms      = round(
-                latency, 2),
+                latency * 1000, 2),
             n_recs          = len(recs),
             cached          = False,
         )
 
     except httpx.TimeoutException:
         request_metrics['errors'] += 1
+        rec_requests_total.labels(
+            model  = 'HSTU',
+            cached = 'false',
+            status = 'timeout').inc()
         raise HTTPException(
             status_code = 504,
             detail      = "Model timeout")
 
     except Exception as e:
         request_metrics['errors'] += 1
+        rec_requests_total.labels(
+            model  = 'HSTU',
+            cached = 'false',
+            status = 'error').inc()
         log.error(
             f"rid={request_id} "
             f"error={str(e)}")
@@ -466,8 +541,7 @@ async def feedback(
             verify_api_key)):
     """
     Log user interaction.
-    Sends to Kafka for model updates.
-    Invalidates Redis cache.
+    Sends to Kafka + invalidates cache.
     """
     request_id = getattr(
         request.state, 'request_id',
@@ -484,7 +558,7 @@ async def feedback(
     invalidated = cache.invalidate(
         body.user_id)
 
-    # 2. Send to Kafka
+    # 2. Send to Kafka + track metric
     kafka_sent = producer.send_interaction(
         user_id   = body.user_id,
         movie_id  = body.movie_id,
@@ -492,6 +566,10 @@ async def feedback(
         action    = body.action,
         watch_pct = body.watch_pct,
     )
+    kafka_events_total.labels(
+        topic  = 'user-interactions',
+        status = 'sent' if kafka_sent
+                 else 'logged').inc()
 
     # 3. Forward to BentoML non-blocking
     try:
@@ -527,29 +605,26 @@ async def feedback(
 @app.get("/metrics",
          tags=["Operations"])
 async def metrics():
-    """
-    Request metrics.
-    Prometheus scrapes this in Day 33.
-    """
+    """Request metrics (JSON format)."""
     lats = request_metrics['latencies']
     return {
-        "total_requests": request_metrics[
+        "total_requests":  request_metrics[
             'total'],
-        "successful":     request_metrics[
+        "successful":      request_metrics[
             'success'],
-        "errors":         request_metrics[
+        "errors":          request_metrics[
             'errors'],
-        "error_rate":     round(
+        "error_rate":      round(
             request_metrics['errors'] /
             max(request_metrics['total'],
                 1) * 100, 2),
-        "latency_p50_ms": round(float(
+        "latency_p50_ms":  round(float(
             np.percentile(lats, 50)),
             1) if lats else 0,
-        "latency_p95_ms": round(float(
+        "latency_p95_ms":  round(float(
             np.percentile(lats, 95)),
             1) if lats else 0,
-        "latency_p99_ms": round(float(
+        "latency_p99_ms":  round(float(
             np.percentile(lats, 99)),
             1) if lats else 0,
         "kafka_connected": producer.connected,
@@ -582,12 +657,12 @@ async def cache_invalidate(user_id: int):
 async def kafka_stats():
     """Kafka producer statistics."""
     return {
-        "connected":         producer.connected,
-        "bootstrap_servers": producer.bootstrap_servers,
+        "connected":          producer.connected,
+        "bootstrap_servers":  producer.bootstrap_servers,
         "topics": {
-            "interactions":  "user-interactions",
-            "recommendations":"recommendations",
-            "dead_letter":   "dead-letter",
+            "interactions":   "user-interactions",
+            "recommendations": "recommendations",
+            "dead_letter":    "dead-letter",
         },
         "timestamp": time.time(),
     }
