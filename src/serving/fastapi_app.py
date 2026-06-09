@@ -11,6 +11,7 @@ Features:
   → Health + readiness probes
   → Request ID tracking
   → Redis caching (Day 31)
+  → Kafka producer (Day 32)
 
 Usage:
   uvicorn src.serving.fastapi_app:app
@@ -53,6 +54,13 @@ cache = RecommendationCache(
     port   = 6379,
     ttl    = 3600,
     prefix = 'rec')
+
+# ── Kafka producer ────────────────────────────────
+from src.serving.kafka_producer import (
+    InteractionProducer)
+
+producer = InteractionProducer(
+    bootstrap_servers='localhost:9092')
 
 # ── Logging ───────────────────────────────────────
 logging.basicConfig(
@@ -281,16 +289,18 @@ async def health():
         bentoml_status = "unreachable"
 
     redis_ok = cache.connected
+    kafka_ok = producer.connected
 
     return HealthResponse(
         status    = "healthy"
                     if bentoml_status ==
                     "healthy" else "degraded",
         api       = "FastAPI",
-        model     = f"HSTU via BentoML "
-                    f"({bentoml_status}) "
-                    f"Redis("
-                    f"{'ok' if redis_ok else 'down'})",
+        model     = (
+            f"HSTU via BentoML"
+            f"({bentoml_status}) "
+            f"Redis({'ok' if redis_ok else 'down'}) "
+            f"Kafka({'ok' if kafka_ok else 'down'})"),
         version   = "1.0.0",
         timestamp = time.time(),
     )
@@ -349,6 +359,14 @@ async def recommend(
                 for r in cached_recs:
                     r['score'] = 0.0
 
+            # Log rec event to Kafka
+            producer.send_recommendation_logged(
+                user_id    = body.user_id,
+                recs       = cached_recs,
+                model      = "HSTU+Cache",
+                latency_ms = latency,
+                cached     = True)
+
             return RecommendResponse(
                 request_id      = request_id,
                 user_id         = body.user_id,
@@ -403,6 +421,14 @@ async def recommend(
             f"n_recs={len(recs)} "
             f"latency={latency:.1f}ms")
 
+        # Log rec event to Kafka
+        producer.send_recommendation_logged(
+            user_id    = body.user_id,
+            recs       = recs,
+            model      = "HSTU",
+            latency_ms = latency,
+            cached     = False)
+
         return RecommendResponse(
             request_id      = request_id,
             user_id         = body.user_id,
@@ -440,8 +466,8 @@ async def feedback(
             verify_api_key)):
     """
     Log user interaction.
-    Invalidates recommendation cache.
-    Queues event to Kafka pipeline.
+    Sends to Kafka for model updates.
+    Invalidates Redis cache.
     """
     request_id = getattr(
         request.state, 'request_id',
@@ -454,11 +480,20 @@ async def feedback(
         f"rating={body.rating} "
         f"action={body.action}")
 
-    # Invalidate cache for this user
+    # 1. Invalidate Redis cache
     invalidated = cache.invalidate(
         body.user_id)
 
-    # Forward to BentoML (non-blocking)
+    # 2. Send to Kafka
+    kafka_sent = producer.send_interaction(
+        user_id   = body.user_id,
+        movie_id  = body.movie_id,
+        rating    = body.rating,
+        action    = body.action,
+        watch_pct = body.watch_pct,
+    )
+
+    # 3. Forward to BentoML non-blocking
     try:
         async with httpx.AsyncClient() \
                 as client:
@@ -483,6 +518,7 @@ async def feedback(
         "movie_id":          body.movie_id,
         "timestamp":         time.time(),
         "cache_invalidated": invalidated,
+        "kafka_sent":        kafka_sent,
         "message":           "Queued for "
                              "Kafka pipeline",
     }
@@ -516,7 +552,9 @@ async def metrics():
         "latency_p99_ms": round(float(
             np.percentile(lats, 99)),
             1) if lats else 0,
-        "timestamp":      time.time(),
+        "kafka_connected": producer.connected,
+        "redis_connected": cache.connected,
+        "timestamp":       time.time(),
     }
 
 
@@ -536,4 +574,20 @@ async def cache_invalidate(user_id: int):
         "user_id":     user_id,
         "invalidated": invalidated,
         "timestamp":   time.time(),
+    }
+
+
+@app.get("/kafka/stats",
+         tags=["Operations"])
+async def kafka_stats():
+    """Kafka producer statistics."""
+    return {
+        "connected":         producer.connected,
+        "bootstrap_servers": producer.bootstrap_servers,
+        "topics": {
+            "interactions":  "user-interactions",
+            "recommendations":"recommendations",
+            "dead_letter":   "dead-letter",
+        },
+        "timestamp": time.time(),
     }
