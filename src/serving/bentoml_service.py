@@ -1,6 +1,6 @@
 """
 BentoML Production Service (1.x API)
-Using Pydantic models for proper input parsing.
+Packages HSTU ranker for production serving.
 
 Usage:
   bentoml serve src.serving.bentoml_service:HSTURankerService --port 3001
@@ -8,6 +8,7 @@ Usage:
 
 import time
 import joblib
+import pandas as pd
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -197,9 +198,8 @@ def load_model():
  movie2token, token2movie,
  PAD_TOKEN) = load_model()
 
-# Load titles
+# Load movie titles
 try:
-    import pandas as pd
     movies_df = pd.read_csv(
         PROC / 'movies_master.csv',
         low_memory=False)
@@ -208,29 +208,52 @@ try:
     ].copy()
     movies_df['movieId'] = \
         movies_df['movieId'].astype(int)
+    movies_df['title'] = \
+        movies_df['title'].fillna(
+            movies_df['movieId'].astype(str)
+            .apply(lambda x: f"Movie {x}"))
     title_map = dict(zip(
         movies_df['movieId'],
         movies_df['title']))
 except Exception:
+    movies_df = pd.DataFrame()
     title_map = {}
+
+# Load ratings for popularity ranking
+try:
+    ratings_df = pd.read_csv(
+        PROC / 'ratings_cleaned.csv')
+    pop_series = ratings_df.groupby(
+        'movieId')['rating']\
+        .count()\
+        .sort_values(ascending=False)
+    pop_top = [
+        int(m) for m in
+        pop_series.index.tolist()]
+except Exception:
+    ratings_df = pd.DataFrame()
+    pop_top    = []
 
 print("✅ HSTU model loaded for serving")
 print(f"   Vocab size : {vocab['vocab_size']}")
 print(f"   Users      : {len(user_seqs)}")
 print(f"   Titles     : {len(title_map)}")
+print(f"   Pop items  : {len(pop_top)}")
 
 
 # ── BentoML 1.x Service ───────────────────────────
 @bentoml.service(
-    name="hstu_ranker",
-    resources={"cpu": "2"},
-    traffic={"timeout": 60},
+    name      = "hstu_ranker",
+    resources = {"cpu": "2"},
+    traffic   = {"timeout": 60},
 )
 class HSTURankerService:
     """
     BentoML 1.x production service.
-    Uses Pydantic models for correct
-    input parsing in BentoML 1.x.
+    Three endpoints:
+      POST /recommend → top-K recs
+      POST /health    → liveness probe
+      POST /feedback  → log interaction
     """
 
     def __init__(self):
@@ -246,118 +269,115 @@ class HSTURankerService:
                   user_id: int,
                   top_k:   int = 10
                   ) -> list:
+        """
+        Core recommendation logic.
+        1. HSTU neural predictions
+        2. Popularity padding for remainder
+        Both skip already-rated items.
+        """
         seq = self.user_seqs.get(
             user_id, [])
 
-        print(f"Getting recs for user "
-              f"{user_id} — "
-              f"seq_len={len(seq)}")
+        # Build rated set from ratings_df
+        try:
+            if not ratings_df.empty:
+                user_rated = set(
+                    int(m) for m in
+                    ratings_df[
+                        ratings_df['userId']
+                        == user_id
+                    ]['movieId'].values)
+            else:
+                user_rated = set(
+                    self.token2movie.get(
+                        int(t), -1)
+                    for t in seq)
+        except Exception:
+            user_rated = set(
+                self.token2movie.get(
+                    int(t), -1)
+                for t in seq)
 
-        if not seq:
-            return [
-                {
-                    "movie_id":   -1,
-                    "title":      "Popular Movie",
-                    "score":      0.0,
-                    "rank":       i + 1,
-                    "cold_start": True,
-                }
-                for i in range(top_k)
-            ]
-
-        pad_l = 50 - len(seq)
-        hist  = torch.LongTensor(
-            [[self.PAD_TOKEN] * pad_l +
-              seq[-50:]])
-
-        toks, scores = self.model.predict(
-            hist, top_k=min(top_k * 10, 500))
-
-        rated    = set(seq)
         seen_mid = set()
         recs     = []
 
-        sc_arr   = scores[0].cpu().numpy()
-        sc_min   = sc_arr.min()
-        sc_max   = sc_arr.max()
-        sc_range = max(sc_max - sc_min, 1e-6)
+        # ── HSTU predictions ──────────────
+        if seq:
+            pad_l = 50 - len(seq)
+            hist  = torch.LongTensor(
+                [[self.PAD_TOKEN] * pad_l +
+                  seq[-50:]])
 
-        for tok, sc in zip(
-                toks[0].cpu().numpy(),
-                sc_arr):
-            mid = self.token2movie.get(
-                int(tok))
-            if not mid:
-                continue
-            if int(tok) in rated:
+            toks, scores = self.model.predict(
+                hist,
+                top_k=min(top_k * 10, 500))
+
+            sc_arr   = scores[0].cpu().numpy()
+            sc_min   = sc_arr.min()
+            sc_range = max(
+                sc_arr.max() - sc_min, 1e-6)
+
+            for tok, sc in zip(
+                    toks[0].cpu().numpy(),
+                    sc_arr):
+                mid = self.token2movie.get(
+                    int(tok))
+                if not mid:
+                    continue
+                mid = int(mid)
+                if mid in user_rated:
+                    continue
+                if mid in seen_mid:
+                    continue
+
+                seen_mid.add(mid)
+                title = self.title_map.get(
+                    mid, f"Movie {mid}")
+
+                recs.append({
+                    "movie_id":   mid,
+                    "title":      str(title),
+                    "score":      round(float(
+                        (sc - sc_min) /
+                        sc_range), 4),
+                    "rank":       len(recs)+1,
+                    "cold_start": False,
+                    "fallback":   False,
+                })
+
+                if len(recs) >= top_k:
+                    break
+
+        # ── Popularity padding ────────────
+        # Fill remaining slots with
+        # popular unrated movies
+        for mid in pop_top:
+            if len(recs) >= top_k:
+                break
+            mid = int(mid)
+            if mid in user_rated:
                 continue
             if mid in seen_mid:
                 continue
 
             seen_mid.add(mid)
-            title      = self.title_map.get(
+            title = self.title_map.get(
                 mid, f"Movie {mid}")
-            norm_score = float(
-                (sc - sc_min) / sc_range)
-
             recs.append({
-                "movie_id":   int(mid),
+                "movie_id":   mid,
                 "title":      str(title),
-                "score":      round(
-                    norm_score, 4),
+                "score":      0.001,
                 "rank":       len(recs)+1,
-                "cold_start": False,
-                "fallback":   False,
+                "cold_start": len(seq) == 0,
+                "fallback":   True,
             })
 
-            if len(recs) >= top_k:
-                break
-
-        # ── Popularity padding ────────────────
-        # If HSTU found fewer than top_k
-        # pad with popular unrated movies
-        if len(recs) < top_k:
-            try:
-                import pandas as pd
-                ratings_df = pd.read_csv(
-                    PROC / 'ratings_cleaned.csv')
-                pop = ratings_df.groupby(
-                    'movieId')['rating']\
-                    .count()\
-                    .sort_values(
-                        ascending=False)
-
-                rated_mids = set(
-                    self.token2movie.get(
-                        int(t), -1)
-                    for t in seq)
-
-                for mid in pop.index:
-                    if len(recs) >= top_k:
-                        break
-                    mid = int(mid)
-                    if mid not in rated_mids \
-                       and mid not in seen_mid:
-                        title = self.title_map\
-                            .get(mid,
-                                 f"Movie {mid}")
-                        seen_mid.add(mid)
-                        recs.append({
-                            "movie_id":   mid,
-                            "title":      str(title),
-                            "score":      0.001,
-                            "rank":       len(recs)+1,
-                            "cold_start": False,
-                            "fallback":   True,
-                        })
-            except Exception as e:
-                print(f"Padding failed: {e}")
-
-        # Re-number ranks after padding
+        # Re-number ranks
         for i, r in enumerate(recs):
             r['rank'] = i + 1
 
         return recs
+
     @bentoml.api()
     def recommend(
             self,
@@ -402,6 +422,7 @@ class HSTURankerService:
                 'vocab_size'],
             "n_users":       len(user_seqs),
             "n_titles":      len(title_map),
+            "pop_items":     len(pop_top),
             "request_count": self.request_count,
             "timestamp":     time.time(),
         }
