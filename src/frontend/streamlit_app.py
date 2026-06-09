@@ -550,16 +550,29 @@ with tab2:
                         user_ratings.iterrows():
                     genres = row.get(
                         'genres_list', [])
-                    if isinstance(genres, str):
+
+                    # Handle all possible types
+                    if genres is None or \
+                            (isinstance(genres, float)
+                            and pd.isna(genres)):
+                        genres = []
+                    elif isinstance(genres, str):
                         try:
                             genres = ast.literal_eval(
                                 genres)
+                            if not isinstance(
+                                    genres, list):
+                                genres = []
                         except Exception:
                             genres = []
-                    for g in (genres or []):
-                        genre_counts[g] = \
-                            genre_counts.get(
-                                g, 0) + 1
+                    elif not isinstance(genres, list):
+                        genres = []
+
+                    for g in genres:
+                        if isinstance(g, str):
+                            genre_counts[g] = \
+                                genre_counts.get(
+                                    g, 0) + 1
 
                 if genre_counts:
                     genre_df = pd.DataFrame(
