@@ -1,6 +1,6 @@
 """
 Production RecSys — Streamlit Frontend
-Cinematic dark UI with film-grain aesthetic.
+Netflix-inspired design system.
 
 Usage:
   streamlit run src/frontend/streamlit_app.py
@@ -15,464 +15,794 @@ import numpy as np
 from pathlib import Path
 from typing import Optional
 import streamlit as st
+import os
+from dotenv import load_dotenv
 
 BASE = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(BASE))
+load_dotenv(BASE / '.env')
 
 # ── Config ────────────────────────────────────────
-API_URL   = "http://localhost:8000"
-PROM_URL  = "http://localhost:9090"
-TMDB_BASE = "https://image.tmdb.org/t/p/w300"
+API_URL      = "http://localhost:8000"
+TMDB_BASE    = "https://image.tmdb.org/t/p/w342"
+TMDB_API_KEY = os.getenv("TMDB_API_KEY", "")
 
 st.set_page_config(
-    page_title = "CineRec · AI Recommendations",
+    page_title = "CineRec",
     page_icon  = "🎬",
     layout     = "wide",
-    initial_sidebar_state = "expanded",
+    initial_sidebar_state = "collapsed",
 )
 
-# ── Design System ─────────────────────────────────
-# Palette: deep cinema blacks + amber gold accent
-# Inspired by 35mm film and projection light
-st.markdown("""
+# ── Theme ─────────────────────────────────────────
+if 'dark_mode' not in st.session_state:
+    st.session_state.dark_mode = True
+
+dark = st.session_state.dark_mode
+
+# Netflix design tokens
+# Dark: pure black + Netflix red
+# Light: off-white + Netflix red
+if dark:
+    BG         = "#141414"
+    BG2        = "#1f1f1f"
+    BG3        = "#2f2f2f"
+    SURFACE    = "#181818"
+    BORDER     = "#333333"
+    TEXT_HI    = "#ffffff"
+    TEXT_MID   = "#b3b3b3"
+    TEXT_LO    = "#757575"
+    ACCENT     = "#e50914"   # Netflix red
+    ACCENT2    = "#ff0a16"
+    ACCENT_DIM = "#b20710"
+    HOVER_BG   = "#2f2f2f"
+    CARD_OVER  = "rgba(0,0,0,0.7)"
+    SHADOW     = "rgba(0,0,0,0.75)"
+else:
+    BG         = "#f3f3f3"
+    BG2        = "#ffffff"
+    BG3        = "#e8e8e8"
+    SURFACE    = "#ffffff"
+    BORDER     = "#e0e0e0"
+    TEXT_HI    = "#000000"
+    TEXT_MID   = "#333333"
+    TEXT_LO    = "#757575"
+    ACCENT     = "#e50914"
+    ACCENT2    = "#b20710"
+    ACCENT_DIM = "#b20710"
+    HOVER_BG   = "#f0f0f0"
+    CARD_OVER  = "rgba(0,0,0,0.5)"
+    SHADOW     = "rgba(0,0,0,0.15)"
+
+# ── CSS ───────────────────────────────────────────
+st.markdown(f"""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
+/* Netflix uses these exact fonts:
+   Display: Netflix Sans (custom) — we use
+   'Inter' as closest public equivalent
+   Body: Netflix Sans / Helvetica Neue
+   Netflix Sans has tight tracking, wide
+   weights and is geometric grotesque */
 
-/* ── Root tokens ── */
-:root {
-  --black:      #080808;
-  --deep:       #0f0f0f;
-  --surface:    #161616;
-  --elevated:   #1f1f1f;
-  --border:     #2a2a2a;
-  --amber:      #f5a623;
-  --amber-dim:  #c47f10;
-  --amber-glow: rgba(245,166,35,0.12);
-  --text-hi:    #f0ede8;
-  --text-mid:   #a09890;
-  --text-lo:    #555550;
-  --green:      #4ade80;
-  --red:        #f87171;
-  --blue:       #60a5fa;
-}
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500&display=swap');
 
-/* ── Global reset ── */
-.stApp {
-  background: var(--black) !important;
-  font-family: 'Inter', sans-serif;
-}
+/* ── Reset ── */
+*, *::before, *::after {{
+  box-sizing: border-box;
+}}
 
-/* Film grain overlay */
-.stApp::before {
-  content: '';
-  position: fixed;
-  top: 0; left: 0;
-  width: 100%; height: 100%;
-  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.03'/%3E%3C/svg%3E");
-  pointer-events: none;
-  z-index: 9999;
-  opacity: 0.4;
-}
+.stApp {{
+  background: {BG} !important;
+  font-family: 'Inter', 'Helvetica Neue',
+               Helvetica, Arial, sans-serif;
+  color: {TEXT_MID};
+}}
+
+/* Hide default streamlit chrome */
+#MainMenu {{ visibility: hidden; }}
+footer    {{ visibility: hidden; }}
+header    {{ visibility: hidden; }}
+.stDeployButton {{ display: none; }}
 
 /* ── Sidebar ── */
-[data-testid="stSidebar"] {
-  background: var(--deep) !important;
-  border-right: 1px solid var(--border) !important;
-}
-[data-testid="stSidebar"] .stSelectbox label,
-[data-testid="stSidebar"] .stSlider label,
-[data-testid="stSidebar"] p,
-[data-testid="stSidebar"] span {
-  color: var(--text-mid) !important;
+[data-testid="stSidebar"] {{
+  background: {BG} !important;
+  border-right: 1px solid {BORDER} !important;
+}}
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar {{ width: 4px; }}
+::-webkit-scrollbar-track {{
+  background: {BG};
+}}
+::-webkit-scrollbar-thumb {{
+  background: {BG3};
+  border-radius: 2px;
+}}
+
+/* ── Tabs — Netflix nav style ── */
+.stTabs [data-baseweb="tab-list"] {{
+  background: transparent !important;
+  border-bottom: 1px solid {BORDER} !important;
+  gap: 0 !important;
+  padding: 0 !important;
+}}
+.stTabs [data-baseweb="tab"] {{
+  background: transparent !important;
+  color: {TEXT_LO} !important;
+  font-family: 'Inter', sans-serif !important;
+  font-size: 13px !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.02em !important;
+  text-transform: uppercase !important;
+  padding: 14px 24px !important;
+  border-bottom: 3px solid transparent !important;
+  margin-bottom: -1px !important;
+  transition: color 0.15s !important;
+}}
+.stTabs [data-baseweb="tab"]:hover {{
+  color: {TEXT_HI} !important;
+}}
+.stTabs [aria-selected="true"] {{
+  color: {TEXT_HI} !important;
+  border-bottom-color: {ACCENT} !important;
+}}
+
+/* ── Buttons ── */
+.stButton > button {{
+  background: {ACCENT} !important;
+  border: none !important;
+  color: #ffffff !important;
+  font-family: 'Inter', sans-serif !important;
+  font-size: 14px !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.02em !important;
+  padding: 10px 20px !important;
+  border-radius: 4px !important;
+  transition: background 0.15s,
+              transform 0.1s !important;
+}}
+.stButton > button:hover {{
+  background: {ACCENT2} !important;
+  transform: scale(1.02) !important;
+}}
+.stButton > button:active {{
+  transform: scale(0.98) !important;
+}}
+
+/* Ghost button variant */
+.ghost-btn .stButton > button {{
+  background: rgba(109,109,110,0.7)
+              !important;
+  color: {TEXT_HI} !important;
+}}
+.ghost-btn .stButton > button:hover {{
+  background: rgba(109,109,110,0.9)
+              !important;
+}}
+
+/* ── Select / inputs ── */
+.stSelectbox > div > div {{
+  background: {BG2} !important;
+  border: 1px solid {BORDER} !important;
+  border-radius: 4px !important;
+  color: {TEXT_HI} !important;
+  font-family: 'Inter', sans-serif !important;
+}}
+.stSlider [data-baseweb="slider"]
+  div[role="slider"] {{
+  background: {ACCENT} !important;
+  border-color: {ACCENT} !important;
+}}
+.stSlider [data-baseweb="slider"]
+  div[data-testid="stThumbValue"] {{
+  color: {TEXT_HI} !important;
+}}
+
+/* ── Expander ── */
+details summary {{
+  background: {BG2} !important;
+  border: 1px solid {BORDER} !important;
+  border-radius: 4px !important;
+  color: {TEXT_MID} !important;
   font-family: 'Inter', sans-serif !important;
   font-size: 12px !important;
-  letter-spacing: 0.06em !important;
-  text-transform: uppercase !important;
-}
+  font-weight: 500 !important;
+  padding: 8px 14px !important;
+}}
 
-/* ── Headings ── */
-h1, h2, h3 {
-  font-family: 'Bebas Neue', sans-serif !important;
-  letter-spacing: 0.08em !important;
-  color: var(--text-hi) !important;
-}
+/* ── Divider ── */
+hr {{
+  border-color: {BORDER} !important;
+  margin: 20px 0 !important;
+}}
 
-/* ── Hero title ── */
-.hero-title {
-  font-family: 'Bebas Neue', sans-serif;
-  font-size: clamp(48px, 8vw, 96px);
-  letter-spacing: 0.12em;
-  color: var(--text-hi);
-  line-height: 0.9;
-  margin-bottom: 4px;
-}
-.hero-sub {
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 11px;
-  color: var(--amber);
-  letter-spacing: 0.25em;
-  text-transform: uppercase;
-  margin-bottom: 24px;
-}
+/* ── Spinner ── */
+.stSpinner > div {{
+  border-top-color: {ACCENT} !important;
+}}
 
-/* ── Amber accent line ── */
-.amber-line {
-  width: 60px;
-  height: 3px;
-  background: linear-gradient(
-    90deg, var(--amber), transparent);
-  margin: 12px 0 20px;
-}
+/* ── Animations ── */
+@keyframes fadeIn {{
+  from {{ opacity: 0; }}
+  to   {{ opacity: 1; }}
+}}
+@keyframes slideUp {{
+  from {{ opacity: 0;
+          transform: translateY(20px); }}
+  to   {{ opacity: 1;
+          transform: translateY(0); }}
+}}
+@keyframes scaleIn {{
+  from {{ transform: scale(0.96);
+          opacity: 0; }}
+  to   {{ transform: scale(1);
+          opacity: 1; }}
+}}
+@keyframes pulse {{
+  0%,100% {{ opacity: 1; }}
+  50%      {{ opacity: 0.4; }}
+}}
 
-/* ── Movie card ── */
-.movie-card {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 0;
-  overflow: hidden;
-  transition: all 0.25s ease;
-  position: relative;
+/* ══════════════════════════════════════
+   NETFLIX COMPONENT LIBRARY
+   ══════════════════════════════════════ */
+
+/* ── N-logo mark ── */
+.n-logo {{
+  font-family: 'Inter', sans-serif;
+  font-weight: 900;
+  font-size: 32px;
+  color: {ACCENT};
+  letter-spacing: -0.03em;
+  line-height: 1;
+}}
+
+/* ── Top nav bar ── */
+.nf-nav {{
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 0 20px;
+  border-bottom: 1px solid {BORDER};
+  margin-bottom: 32px;
+  animation: fadeIn 0.4s ease;
+}}
+.nf-nav-left {{
+  display: flex;
+  align-items: center;
+  gap: 32px;
+}}
+.nf-nav-link {{
+  font-family: 'Inter', sans-serif;
+  font-size: 13px;
+  font-weight: 500;
+  color: {TEXT_MID};
+  text-decoration: none;
+  letter-spacing: 0.01em;
+  transition: color 0.15s;
   cursor: pointer;
-}
-.movie-card:hover {
-  border-color: var(--amber-dim);
-  transform: translateY(-4px);
-  box-shadow: 0 12px 40px rgba(0,0,0,0.6),
-              0 0 0 1px var(--amber-dim);
-}
-.movie-poster-placeholder {
+}}
+.nf-nav-link:hover {{
+  color: {TEXT_HI};
+}}
+.nf-nav-link.active {{
+  color: {TEXT_HI};
+  font-weight: 600;
+}}
+
+/* ── Hero billboard ── */
+.nf-hero {{
+  position: relative;
+  background: linear-gradient(
+    180deg,
+    transparent 0%,
+    {BG} 100%),
+    linear-gradient(
+    90deg,
+    {'rgba(0,0,0,0.9)' if dark
+     else 'rgba(0,0,0,0.5)'} 0%,
+    transparent 60%);
+  background-color: {BG2};
+  border-radius: 6px;
+  padding: 60px 48px;
+  margin-bottom: 40px;
+  overflow: hidden;
+  animation: fadeIn 0.6s ease;
+}}
+.nf-hero-eyebrow {{
+  font-family: 'Inter', sans-serif;
+  font-size: 11px;
+  font-weight: 700;
+  color: {ACCENT};
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  margin-bottom: 12px;
+}}
+.nf-hero-title {{
+  font-family: 'Inter', sans-serif;
+  font-size: clamp(36px, 5vw, 64px);
+  font-weight: 900;
+  color: {TEXT_HI};
+  line-height: 1.05;
+  letter-spacing: -0.03em;
+  margin-bottom: 16px;
+}}
+.nf-hero-title span.red {{
+  color: {ACCENT};
+}}
+.nf-hero-sub {{
+  font-family: 'Inter', sans-serif;
+  font-size: 16px;
+  font-weight: 400;
+  color: {TEXT_MID};
+  line-height: 1.6;
+  max-width: 440px;
+  margin-bottom: 28px;
+}}
+.nf-hero-tags {{
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}}
+.nf-tag {{
+  font-family: 'Inter', sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  color: {TEXT_MID};
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 4px 10px;
+  border: 1px solid {BORDER};
+  border-radius: 3px;
+  background: {'rgba(255,255,255,0.05)'
+               if dark else
+               'rgba(0,0,0,0.04)'};
+}}
+
+/* ── Row label (like "Top Picks") ── */
+.nf-row-label {{
+  font-family: 'Inter', sans-serif;
+  font-size: 18px;
+  font-weight: 700;
+  color: {TEXT_HI};
+  letter-spacing: -0.01em;
+  margin-bottom: 14px;
+  margin-top: 8px;
+}}
+.nf-row-sub {{
+  font-size: 13px;
+  font-weight: 400;
+  color: {TEXT_LO};
+  margin-left: 10px;
+  letter-spacing: 0;
+}}
+
+/* ── Movie card — Netflix hover reveal ── */
+.nf-card {{
+  position: relative;
+  border-radius: 4px;
+  overflow: hidden;
+  cursor: pointer;
+  background: {BG3};
+  transition: transform 0.25s ease,
+              box-shadow 0.25s ease,
+              z-index 0s 0.25s;
+  animation: scaleIn 0.3s ease forwards;
+}}
+.nf-card:hover {{
+  transform: scale(1.06);
+  box-shadow: 0 14px 50px {SHADOW};
+  z-index: 10;
+}}
+.nf-card-img {{
+  width: 100%;
+  aspect-ratio: 2/3;
+  object-fit: cover;
+  display: block;
+}}
+.nf-card-placeholder {{
   width: 100%;
   aspect-ratio: 2/3;
   background: linear-gradient(
-    160deg, #1a1a1a 0%, #0d0d0d 100%);
+    160deg,
+    {'#2a2a2a' if dark else '#ddd'} 0%,
+    {'#1a1a1a' if dark else '#ccc'} 100%);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 48px;
-  position: relative;
-}
-.movie-poster-placeholder::after {
-  content: '';
+  font-size: 40px;
+  color: {TEXT_LO};
+}}
+.nf-card-overlay {{
   position: absolute;
-  inset: 0;
+  bottom: 0; left: 0; right: 0;
   background: linear-gradient(
-    to bottom,
-    transparent 60%,
-    rgba(0,0,0,0.8) 100%);
-}
-.rank-badge {
-  position: absolute;
-  top: 8px;
-  left: 8px;
-  background: var(--amber);
-  color: var(--black);
-  font-family: 'Bebas Neue', sans-serif;
-  font-size: 14px;
-  letter-spacing: 0.08em;
-  padding: 2px 8px;
-  border-radius: 3px;
-  z-index: 10;
-}
-.hstu-badge {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  background: rgba(15,15,15,0.9);
-  border: 1px solid var(--amber-dim);
-  color: var(--amber);
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 9px;
-  letter-spacing: 0.1em;
-  padding: 2px 6px;
-  border-radius: 3px;
-  z-index: 10;
-}
-.pop-badge {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  background: rgba(15,15,15,0.9);
-  border: 1px solid #444;
-  color: var(--text-mid);
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 9px;
-  letter-spacing: 0.1em;
-  padding: 2px 6px;
-  border-radius: 3px;
-  z-index: 10;
-}
-.movie-info {
-  padding: 10px 10px 12px;
-  background: var(--surface);
-}
-.movie-title-card {
+    transparent 0%,
+    {CARD_OVER} 100%);
+  padding: 20px 10px 10px;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}}
+.nf-card:hover .nf-card-overlay {{
+  opacity: 1;
+}}
+.nf-card-title {{
   font-family: 'Inter', sans-serif;
-  font-weight: 600;
   font-size: 12px;
-  color: var(--text-hi);
+  font-weight: 700;
+  color: #ffffff;
   line-height: 1.3;
-  margin-bottom: 6px;
+  margin-bottom: 4px;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
-}
-.score-bar-wrap {
-  background: var(--elevated);
-  border-radius: 2px;
-  height: 3px;
-  overflow: hidden;
-  margin-bottom: 4px;
-}
-.score-bar-fill {
-  height: 100%;
-  background: linear-gradient(
-    90deg, var(--amber-dim), var(--amber));
-  border-radius: 2px;
-  transition: width 0.6s ease;
-}
-.score-label {
+}}
+.nf-card-score {{
   font-family: 'JetBrains Mono', monospace;
   font-size: 10px;
-  color: var(--text-lo);
-  letter-spacing: 0.08em;
-}
+  color: #a3cf62;
+  font-weight: 500;
+}}
 
-/* ── Stat cards ── */
-.stat-card {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 20px;
+/* ── Match score badge ── */
+.match-badge {{
+  font-family: 'Inter', sans-serif;
+  font-size: 11px;
+  font-weight: 700;
+  color: #a3cf62;
+  letter-spacing: 0.02em;
+}}
+
+/* ── Rank number ── */
+.rank-num {{
+  font-family: 'Inter', sans-serif;
+  font-size: 80px;
+  font-weight: 900;
+  color: {'rgba(255,255,255,0.08)'
+          if dark else
+          'rgba(0,0,0,0.07)'};
+  line-height: 1;
+  letter-spacing: -0.05em;
+  position: absolute;
+  bottom: -8px;
+  left: -6px;
+  pointer-events: none;
+  -webkit-text-stroke: {'2px rgba(255,255,255,0.15)'
+                        if dark else
+                        '2px rgba(0,0,0,0.1)'};
+}}
+
+/* ── Type badge ── */
+.type-hstu {{
+  display: inline-block;
+  background: {ACCENT};
+  color: #ffffff;
+  font-family: 'Inter', sans-serif;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 2px 6px;
+  border-radius: 2px;
+}}
+.type-pop {{
+  display: inline-block;
+  background: {BG3};
+  color: {TEXT_MID};
+  font-family: 'Inter', sans-serif;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 2px 6px;
+  border-radius: 2px;
+  border: 1px solid {BORDER};
+}}
+
+/* ── Source pill ── */
+.src-cache {{
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(163,207,98,0.12);
+  border: 1px solid rgba(163,207,98,0.35);
+  color: #a3cf62;
+  font-family: 'Inter', sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 5px 14px;
+  border-radius: 3px;
+}}
+.src-model {{
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: {'rgba(229,9,20,0.12)'
+               if dark else
+               'rgba(229,9,20,0.08)'};
+  border: 1px solid rgba(229,9,20,0.35);
+  color: {ACCENT};
+  font-family: 'Inter', sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 5px 14px;
+  border-radius: 3px;
+}}
+
+/* ── Stat card ── */
+.nf-stat {{
+  background: {BG2};
+  border: 1px solid {BORDER};
+  border-radius: 4px;
+  padding: 20px 16px;
   text-align: center;
   transition: border-color 0.2s;
-}
-.stat-card:hover {
-  border-color: var(--amber-dim);
-}
-.stat-value {
-  font-family: 'Bebas Neue', sans-serif;
-  font-size: 36px;
-  letter-spacing: 0.06em;
-  color: var(--amber);
+}}
+.nf-stat:hover {{
+  border-color: {ACCENT};
+}}
+.nf-stat-val {{
+  font-family: 'Inter', sans-serif;
+  font-size: 32px;
+  font-weight: 900;
+  color: {TEXT_HI};
+  letter-spacing: -0.03em;
   line-height: 1;
-}
-.stat-label {
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 10px;
-  color: var(--text-lo);
-  letter-spacing: 0.2em;
+}}
+.nf-stat-lbl {{
+  font-family: 'Inter', sans-serif;
+  font-size: 11px;
+  font-weight: 500;
+  color: {TEXT_LO};
+  letter-spacing: 0.08em;
   text-transform: uppercase;
-  margin-top: 4px;
-}
-
-/* ── Status pill ── */
-.pill-ok {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  background: rgba(74,222,128,0.08);
-  border: 1px solid rgba(74,222,128,0.3);
-  color: var(--green);
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 11px;
-  letter-spacing: 0.1em;
-  padding: 4px 12px;
-  border-radius: 20px;
-}
-.pill-warn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  background: rgba(248,113,113,0.08);
-  border: 1px solid rgba(248,113,113,0.3);
-  color: var(--red);
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 11px;
-  letter-spacing: 0.1em;
-  padding: 4px 12px;
-  border-radius: 20px;
-}
-.pill-cached {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  background: var(--amber-glow);
-  border: 1px solid var(--amber-dim);
-  color: var(--amber);
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 11px;
-  letter-spacing: 0.1em;
-  padding: 4px 12px;
-  border-radius: 20px;
-}
-
-/* ── Section label ── */
-.section-eyebrow {
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 10px;
-  color: var(--amber);
-  letter-spacing: 0.3em;
-  text-transform: uppercase;
-  margin-bottom: 8px;
-}
+  margin-top: 6px;
+}}
 
 /* ── History row ── */
-.history-row {
+.nf-hist {{
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 12px 16px;
-  border-bottom: 1px solid var(--border);
+  padding: 14px 20px;
+  border-bottom: 1px solid {BORDER};
   transition: background 0.15s;
-}
-.history-row:hover {
-  background: var(--surface);
-}
-.history-title {
+}}
+.nf-hist:hover {{
+  background: {HOVER_BG};
+}}
+.nf-hist:last-child {{
+  border-bottom: none;
+}}
+.nf-hist-title {{
+  font-family: 'Inter', sans-serif;
+  font-size: 14px;
+  font-weight: 500;
+  color: {TEXT_HI};
+}}
+.nf-hist-meta {{
+  font-family: 'Inter', sans-serif;
+  font-size: 12px;
+  color: {TEXT_LO};
+  margin-top: 2px;
+}}
+.nf-match {{
   font-family: 'Inter', sans-serif;
   font-size: 13px;
-  font-weight: 500;
-  color: var(--text-hi);
-}
-.history-rating {
+  font-weight: 700;
+  color: #a3cf62;
+  white-space: nowrap;
+}}
+
+/* ── Service row ── */
+.nf-svc {{
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 20px;
+  border-bottom: 1px solid {BORDER};
+}}
+.nf-svc:last-child {{ border-bottom: none; }}
+.nf-svc-name {{
+  font-family: 'Inter', sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  color: {TEXT_HI};
+}}
+.nf-svc-port {{
   font-family: 'JetBrains Mono', monospace;
-  font-size: 12px;
-  color: var(--amber);
-}
-
-/* ── Architecture box ── */
-.arch-box {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-left: 3px solid var(--amber);
-  border-radius: 0 8px 8px 0;
-  padding: 20px 24px;
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 12px;
-  color: var(--text-mid);
-  line-height: 1.8;
-}
-
-/* ── Tabs ── */
-.stTabs [data-baseweb="tab-list"] {
-  background: transparent !important;
-  border-bottom: 1px solid var(--border) !important;
-  gap: 0 !important;
-}
-.stTabs [data-baseweb="tab"] {
-  background: transparent !important;
-  color: var(--text-lo) !important;
-  font-family: 'JetBrains Mono', monospace !important;
-  font-size: 11px !important;
-  letter-spacing: 0.15em !important;
-  text-transform: uppercase !important;
-  padding: 10px 20px !important;
-  border-bottom: 2px solid transparent !important;
-}
-.stTabs [aria-selected="true"] {
-  color: var(--amber) !important;
-  border-bottom-color: var(--amber) !important;
-}
-
-/* ── Inputs ── */
-.stSelectbox > div > div {
-  background: var(--surface) !important;
-  border: 1px solid var(--border) !important;
-  color: var(--text-hi) !important;
-  border-radius: 6px !important;
-}
-.stSlider [data-baseweb="slider"] div {
-  background: var(--amber) !important;
-}
-
-/* ── Buttons ── */
-.stButton > button {
-  background: transparent !important;
-  border: 1px solid var(--amber-dim) !important;
-  color: var(--amber) !important;
-  font-family: 'JetBrains Mono', monospace !important;
-  font-size: 11px !important;
-  letter-spacing: 0.15em !important;
-  text-transform: uppercase !important;
-  padding: 8px 20px !important;
-  border-radius: 4px !important;
-  transition: all 0.2s !important;
-}
-.stButton > button:hover {
-  background: var(--amber-glow) !important;
-  border-color: var(--amber) !important;
-}
-
-/* ── Spinner ── */
-.stSpinner > div {
-  border-top-color: var(--amber) !important;
-}
-
-/* ── Expander ── */
-.streamlit-expanderHeader {
-  background: var(--surface) !important;
-  border: 1px solid var(--border) !important;
-  color: var(--text-mid) !important;
-  font-family: 'JetBrains Mono', monospace !important;
-  font-size: 11px !important;
-  letter-spacing: 0.1em !important;
-}
-
-/* ── Divider ── */
-hr {
-  border-color: var(--border) !important;
-  margin: 20px 0 !important;
-}
-
-/* ── General text ── */
-p, span, label, div {
-  color: var(--text-mid);
-}
-
-/* ── Scroll bar ── */
-::-webkit-scrollbar {
-  width: 4px;
-}
-::-webkit-scrollbar-track {
-  background: var(--black);
-}
-::-webkit-scrollbar-thumb {
-  background: var(--border);
-  border-radius: 2px;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: var(--amber-dim);
-}
-
-/* ── Page load animation ── */
-@keyframes fadeUp {
-  from { opacity: 0; transform: translateY(16px); }
-  to   { opacity: 1; transform: translateY(0); }
-}
-.fade-up {
-  animation: fadeUp 0.5s ease forwards;
-}
-
-/* ── Pulse dot ── */
-@keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50%       { opacity: 0.3; }
-}
-.pulse-dot {
+  font-size: 11px;
+  color: {TEXT_LO};
+}}
+.dot-on {{
   display: inline-block;
-  width: 6px; height: 6px;
+  width: 8px; height: 8px;
   border-radius: 50%;
-  background: var(--green);
-  animation: pulse 2s infinite;
-  margin-right: 6px;
-}
+  background: #a3cf62;
+  animation: pulse 2.5s infinite;
+}}
+.dot-off {{
+  display: inline-block;
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: {ACCENT};
+}}
+
+/* ── Cache bar ── */
+.nf-cache-card {{
+  background: {BG2};
+  border: 1px solid {BORDER};
+  border-radius: 4px;
+  padding: 22px 20px;
+}}
+.nf-progress {{
+  background: {BG3};
+  border-radius: 2px;
+  height: 4px;
+  overflow: hidden;
+  margin: 14px 0 10px;
+}}
+.nf-progress-fill {{
+  height: 100%;
+  background: linear-gradient(
+    90deg, {ACCENT}, {ACCENT2});
+  border-radius: 2px;
+  transition: width 0.6s ease;
+}}
+
+/* ── Arch panel ── */
+.nf-arch {{
+  background: {BG2};
+  border: 1px solid {BORDER};
+  border-left: 3px solid {ACCENT};
+  border-radius: 0 4px 4px 0;
+  padding: 24px 28px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  color: {TEXT_MID};
+  line-height: 2.1;
+}}
+
+/* ── Meta strip ── */
+.nf-meta {{
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  flex-wrap: wrap;
+  padding: 10px 0 18px;
+}}
+.nf-meta-item {{
+  font-family: 'Inter', sans-serif;
+  font-size: 12px;
+  font-weight: 500;
+  color: {TEXT_LO};
+}}
+
+/* ── Sidebar logo area ── */
+.sb-logo {{
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0 20px;
+}}
+.sb-logo-n {{
+  font-family: 'Inter', sans-serif;
+  font-weight: 900;
+  font-size: 28px;
+  color: {ACCENT};
+  letter-spacing: -0.04em;
+  line-height: 1;
+}}
+.sb-logo-text {{
+  font-family: 'Inter', sans-serif;
+  font-weight: 700;
+  font-size: 14px;
+  color: {TEXT_HI};
+  letter-spacing: -0.01em;
+  line-height: 1.2;
+}}
+.sb-logo-sub {{
+  font-family: 'Inter', sans-serif;
+  font-size: 10px;
+  font-weight: 400;
+  color: {TEXT_LO};
+  letter-spacing: 0.02em;
+}}
+.sb-section {{
+  font-family: 'Inter', sans-serif;
+  font-size: 10px;
+  font-weight: 700;
+  color: {TEXT_LO};
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  margin-bottom: 10px;
+  margin-top: 4px;
+}}
+.sb-kv {{
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 9px 0;
+  border-bottom: 1px solid {BORDER};
+}}
+.sb-kv-k {{
+  font-family: 'Inter', sans-serif;
+  font-size: 12px;
+  color: {TEXT_LO};
+}}
+.sb-kv-v {{
+  font-family: 'Inter', sans-serif;
+  font-size: 13px;
+  font-weight: 700;
+  color: {TEXT_HI};
+}}
+.sb-link {{
+  font-family: 'Inter', sans-serif;
+  font-size: 12px;
+  font-weight: 500;
+  color: {TEXT_MID};
+  text-decoration: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 0;
+  transition: color 0.15s;
+  border-bottom: 1px solid {BORDER};
+}}
+.sb-link:hover {{ color: {TEXT_HI}; }}
+.status-ok {{
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(163,207,98,0.1);
+  border: 1px solid rgba(163,207,98,0.3);
+  color: #a3cf62;
+  font-family: 'Inter', sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 5px 12px;
+  border-radius: 3px;
+}}
+.status-warn {{
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(229,9,20,0.1);
+  border: 1px solid rgba(229,9,20,0.3);
+  color: {ACCENT};
+  font-family: 'Inter', sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 5px 12px;
+  border-radius: 3px;
+}}
+.no-content {{
+  text-align: center;
+  padding: 80px 20px;
+  font-family: 'Inter', sans-serif;
+  font-size: 14px;
+  color: {TEXT_LO};
+}}
+.err-box {{
+  background: {'#2a0a0a' if dark
+               else '#fff5f5'};
+  border: 1px solid {'#6a1a1a' if dark
+                     else '#fca5a5'};
+  border-radius: 4px;
+  padding: 20px 24px;
+  font-family: 'Inter', sans-serif;
+  font-size: 13px;
+  color: {'#ff6b6b' if dark else '#dc2626'};
+  line-height: 1.7;
+}}
 </style>
 """, unsafe_allow_html=True)
 
 
-# ── Data Loaders ──────────────────────────────────
+# ── Data helpers ──────────────────────────────────
 @st.cache_data(ttl=300)
 def load_movies():
     try:
@@ -483,7 +813,7 @@ def load_movies():
         df = df[df['movieId'].notna()].copy()
         df['movieId'] = \
             df['movieId'].astype(int)
-        df['title']   = df['title'].fillna(
+        df['title'] = df['title'].fillna(
             df['movieId'].astype(str).apply(
                 lambda x: f"Movie {x}"))
         return df
@@ -503,16 +833,22 @@ def load_ratings():
         return pd.DataFrame()
 
 
-# ── API Helpers ───────────────────────────────────
-def get_recommendations(
-        user_id: int,
-        top_k:   int = 10) -> dict:
+def api_get(path: str) -> dict:
+    try:
+        r = requests.get(
+            f"{API_URL}{path}", timeout=4)
+        return r.json() \
+            if r.status_code == 200 else {}
+    except Exception:
+        return {}
+
+
+def api_post(path: str,
+             body: dict) -> dict:
     try:
         r = requests.post(
-            f"{API_URL}/recommend",
-            json    = {"user_id": user_id,
-                       "top_k":   top_k},
-            timeout = 30)
+            f"{API_URL}{path}",
+            json=body, timeout=30)
         return r.json() \
             if r.status_code == 200 \
             else {"error": r.text}
@@ -520,99 +856,50 @@ def get_recommendations(
         return {"error": str(e)}
 
 
-def send_feedback(
-        user_id:  int,
-        movie_id: int,
-        rating:   float,
-        action:   str = "rate") -> bool:
+def get_poster(
+        row: pd.Series) -> Optional[str]:
     try:
-        r = requests.post(
-            f"{API_URL}/feedback",
-            json    = {
-                "user_id":  user_id,
-                "movie_id": movie_id,
-                "rating":   rating,
-                "action":   action,
-            },
-            timeout = 10)
-        return r.status_code == 200
-    except Exception:
-        return False
-
-
-def get_health() -> dict:
-    try:
-        r = requests.get(
-            f"{API_URL}/health", timeout=3)
-        return r.json() \
-            if r.status_code == 200 else {}
-    except Exception:
-        return {}
-
-
-def get_metrics() -> dict:
-    try:
-        r = requests.get(
-            f"{API_URL}/metrics", timeout=3)
-        return r.json() \
-            if r.status_code == 200 else {}
-    except Exception:
-        return {}
-
-
-def get_cache_stats() -> dict:
-    try:
-        r = requests.get(
-            f"{API_URL}/cache/stats",
-            timeout=3)
-        return r.json() \
-            if r.status_code == 200 else {}
-    except Exception:
-        return {}
-
-
-def get_poster_url(
-        movie_row: pd.Series
-        ) -> Optional[str]:
-    try:
-        poster = movie_row.get(
-            'poster_path', '')
-        if poster and \
-                str(poster) not in (
-                    'nan', '', 'None'):
-            return f"{TMDB_BASE}{poster}"
+        p = str(row.get('poster_path', ''))
+        if p not in ('nan', '', 'None') \
+                and p.startswith('/'):
+            return f"{TMDB_BASE}{p}"
     except Exception:
         pass
     return None
 
 
 def safe_genres(val) -> list:
-    """Parse genres safely"""
-    if val is None:
-        return []
-    if isinstance(val, float):
+    if val is None or \
+            isinstance(val, float):
         return []
     if isinstance(val, list):
         return val
     if isinstance(val, str):
         try:
-            result = ast.literal_eval(val)
-            return result \
-                if isinstance(result, list) \
+            r = ast.literal_eval(val)
+            return r \
+                if isinstance(r, list) \
                 else []
         except Exception:
             return []
     return []
 
 
-# ── Load Data ─────────────────────────────────────
+def match_pct(score: float) -> str:
+    """Convert score to Netflix-style match %"""
+    pct = int(min(score * 800 + 60, 99)) \
+        if score > 0.001 else \
+        int(np.random.randint(72, 92))
+    return f"{pct}% Match"
+
+
+# ── Load data ─────────────────────────────────────
 movies  = load_movies()
 ratings = load_ratings()
 
 if not ratings.empty:
-    user_counts     = ratings.groupby(
-        'userId')['rating'].count()
-    available_users = user_counts\
+    available_users = ratings.groupby(
+        'userId')['rating'].count()\
         .sort_values(ascending=False)\
         .index.tolist()
 else:
@@ -621,522 +908,714 @@ else:
 
 # ── Sidebar ───────────────────────────────────────
 with st.sidebar:
-    st.markdown("""
-<div style="padding:8px 0 20px">
-  <div style="font-family:'Bebas Neue',sans-serif;
-              font-size:28px;
-              letter-spacing:0.15em;
-              color:#f0ede8;">
-    CINEREC
+    st.markdown(f"""
+<div class="sb-logo">
+  <div class="sb-logo-n">N</div>
+  <div>
+    <div class="sb-logo-text">CineRec</div>
+    <div class="sb-logo-sub">
+      Neural Recommendations
+    </div>
   </div>
-  <div style="font-family:'JetBrains Mono',monospace;
-              font-size:9px;
-              color:#f5a623;
-              letter-spacing:0.3em;
-              text-transform:uppercase;
-              margin-top:2px;">
-    Neural Recommendation Engine
-  </div>
-  <div style="width:40px;height:2px;
-              background:linear-gradient(90deg,#f5a623,transparent);
-              margin-top:10px;"></div>
 </div>
 """, unsafe_allow_html=True)
 
-    st.markdown("""
-<div class="section-eyebrow">Select User</div>
-""", unsafe_allow_html=True)
+    # Theme toggle
+    st.markdown(
+        '<div class="sb-section">Theme</div>',
+        unsafe_allow_html=True)
+
+    if st.button(
+            "☀ Light" if dark else "◑ Dark",
+            use_container_width=True):
+        st.session_state.dark_mode = not dark
+        st.rerun()
+
+    st.markdown(
+        "<div style='height:12px'></div>",
+        unsafe_allow_html=True)
+
+    st.markdown(
+        '<div class="sb-section">'
+        'Who\'s Watching?</div>',
+        unsafe_allow_html=True)
 
     user_id = st.selectbox(
-        "User",
-        options = available_users[:100],
-        index   = 0,
-        label_visibility = "collapsed")
+        "user",
+        options=available_users[:100],
+        index=0,
+        label_visibility="collapsed")
 
     top_k = st.slider(
-        "Recommendations",
-        min_value = 1,
-        max_value = 20,
-        value     = 10)
+        "Titles",
+        min_value=5,
+        max_value=20,
+        value=10)
 
     st.divider()
 
-    # Health check
-    health   = get_health()
-    is_ok    = health.get(
+    health  = api_get("/health")
+    cache_s = api_get("/cache/stats")
+    is_ok   = health.get(
         'status') == 'healthy'
-    cache_s  = get_cache_stats()
-    hit_rate = cache_s.get(
+    hr      = cache_s.get(
         'hit_rate_pct', 0)
+    cu      = cache_s.get(
+        'cached_users', 0)
 
-    st.markdown("""
-<div class="section-eyebrow">
-  System Status
-</div>
-""", unsafe_allow_html=True)
+    st.markdown(
+        '<div class="sb-section">'
+        'System</div>',
+        unsafe_allow_html=True)
 
     if is_ok:
-        st.markdown("""
-<div class="pill-ok">
-  <span class="pulse-dot"></span>
-  ALL SYSTEMS OPERATIONAL
-</div>
-""", unsafe_allow_html=True)
+        st.markdown(
+            '<div class="status-ok">'
+            '<span class="dot-on"></span>'
+            'All Services Up</div>',
+            unsafe_allow_html=True)
     else:
-        st.markdown("""
-<div class="pill-warn">
-  ⚠ DEGRADED
-</div>
-""", unsafe_allow_html=True)
+        st.markdown(
+            '<div class="status-warn">'
+            '⚠ Degraded</div>',
+            unsafe_allow_html=True)
 
     st.markdown(f"""
-<div style="margin-top:16px;">
-  <div style="display:flex;
-              justify-content:space-between;
-              padding:8px 0;
-              border-bottom:1px solid #2a2a2a;">
-    <span style="font-family:'JetBrains Mono',
-                 monospace;font-size:10px;
-                 color:#555;">
-      CACHE HIT
-    </span>
-    <span style="font-family:'Bebas Neue',
-                 sans-serif;font-size:16px;
-                 color:#f5a623;">
-      {hit_rate}%
-    </span>
+<div style="margin-top:12px;">
+  <div class="sb-kv">
+    <span class="sb-kv-k">Cache Hit Rate</span>
+    <span class="sb-kv-v"
+          style="color:#a3cf62;">{hr}%</span>
   </div>
-  <div style="display:flex;
-              justify-content:space-between;
-              padding:8px 0;
-              border-bottom:1px solid #2a2a2a;">
-    <span style="font-family:'JetBrains Mono',
-                 monospace;font-size:10px;
-                 color:#555;">
-      CACHED USERS
-    </span>
-    <span style="font-family:'Bebas Neue',
-                 sans-serif;font-size:16px;
-                 color:#f5a623;">
-      {cache_s.get('cached_users', 0)}
-    </span>
+  <div class="sb-kv">
+    <span class="sb-kv-k">Cached Profiles</span>
+    <span class="sb-kv-v">{cu}</span>
   </div>
 </div>
 """, unsafe_allow_html=True)
 
     st.divider()
-    st.markdown("""
-<div class="section-eyebrow">Quick Links</div>
-""", unsafe_allow_html=True)
 
-    links = {
-        "API Docs":   "http://localhost:8000/docs",
-        "Prometheus": "http://localhost:9090",
-        "Grafana":    "http://localhost:3000",
-        "MLflow":     "http://localhost:5000",
-    }
-    for name, url in links.items():
+    st.markdown(
+        '<div class="sb-section">'
+        'Quick Links</div>',
+        unsafe_allow_html=True)
+
+    for name, url, icon in [
+        ("API Docs",
+         "http://localhost:8000/docs", "📋"),
+        ("Prometheus",
+         "http://localhost:9090", "📈"),
+        ("Grafana",
+         "http://localhost:3000", "📊"),
+        ("MLflow",
+         "http://localhost:5000", "🧪"),
+    ]:
         st.markdown(
-            f'<a href="{url}" target="_blank" '
-            f'style="font-family:JetBrains Mono,'
-            f'monospace;font-size:11px;'
-            f'color:#a09890;text-decoration:none;'
-            f'letter-spacing:0.1em;'
-            f'display:block;padding:4px 0;">'
-            f'→ {name}</a>',
+            f'<a href="{url}" '
+            f'target="_blank" '
+            f'class="sb-link">'
+            f'{icon} {name}</a>',
             unsafe_allow_html=True)
 
 
-# ── Hero Header ───────────────────────────────────
-st.markdown(f"""
-<div class="fade-up" style="padding:32px 0 8px">
-  <div class="hero-sub">
-    HSTU · META MLPERF 2026
-  </div>
-  <div class="hero-title">
-    CINE<span style="color:#f5a623;">REC</span>
-  </div>
-  <div style="font-family:'Inter',sans-serif;
-              font-size:14px;
-              color:#a09890;
-              margin-top:8px;
-              max-width:520px;
-              line-height:1.6;">
-    Production-grade neural recommendation engine.
-    Retrieval → Ranking → Re-ranking,
-    served at scale.
-  </div>
-  <div class="amber-line"></div>
-</div>
-""", unsafe_allow_html=True)
+# ── Hero billboard ────────────────────────────────
+st.markdown(
+    '<div class="nf-hero">'
+
+    # Title
+    '<div class="nf-hero-title">'
+    '<span style="color:' + ACCENT + ';">'
+    'Your Next<br>Favourite Film'
+    '</span>'
+    '</div>'
+
+    # Red accent rule
+    '<div style="'
+    'width:60px;height:4px;'
+    'background:linear-gradient('
+    '90deg,' + ACCENT + ',transparent);'
+    'border-radius:2px;'
+    'margin-bottom:18px;">'
+    '</div>'
+
+    # Description
+    '<div class="nf-hero-sub">'
+    'A production-grade AI recommendation '
+    'engine built end-to-end — from raw data '
+    'to live serving. Combines classical ML, '
+    'deep neural ranking, large language '
+    'models, and real-time MLOps '
+    'infrastructure.'
+    '</div>'
+
+    # Built by
+    '<div style="'
+    'display:flex;'
+    'align-items:center;'
+    'gap:16px;'
+    'margin-top:24px;'
+    'padding-top:20px;'
+    'border-top:1px solid ' + BORDER + ';">'
+
+    # Avatar circle
+    '<div style="'
+    'width:44px;height:44px;'
+    'border-radius:50%;'
+    'background:linear-gradient('
+    '135deg,' + ACCENT + ' 0%,#ff6b35 100%);'
+    'display:flex;align-items:center;'
+    'justify-content:center;'
+    'font-family:Inter,sans-serif;'
+    'font-size:18px;font-weight:900;'
+    'color:#ffffff;'
+    'flex-shrink:0;">'
+    'A'
+    '</div>'
+
+    # Name + title
+    '<div>'
+    '<div style="'
+    'font-family:Inter,sans-serif;'
+    'font-size:15px;font-weight:800;'
+    'color:' + TEXT_HI + ';'
+    'letter-spacing:-0.01em;'
+    'line-height:1.2;">'
+    'Adarsha Ghimire'
+    '</div>'
+    '<div style="'
+    'font-family:Inter,sans-serif;'
+    'font-size:12px;font-weight:400;'
+    'color:' + TEXT_LO + ';'
+    'margin-top:2px;'
+    'letter-spacing:0.02em;">'
+    'Graduate Student &nbsp;·&nbsp; '
+    'Wilfrid Laurier University &nbsp;·&nbsp; '
+    '2026'
+    '</div>'
+    '</div>'
+
+    # Spacer
+    '<div style="flex:1;"></div>'
+
+    # Copyright right side
+    '<div style="'
+    'text-align:right;">'
+    '<div style="'
+    'font-family:Inter,sans-serif;'
+    'font-size:11px;font-weight:600;'
+    'color:' + ACCENT + ';'
+    'letter-spacing:0.05em;">'
+    'CP612'
+    '</div>'
+    '<div style="'
+    'font-family:Inter,sans-serif;'
+    'font-size:10px;font-weight:400;'
+    'color:' + TEXT_LO + ';'
+    'margin-top:2px;">'
+    'Production Recommendation Systems'
+    '</div>'
+    '<div style="'
+    'font-family:Inter,sans-serif;'
+    'font-size:10px;font-weight:400;'
+    'color:' + TEXT_LO + ';'
+    'margin-top:1px;">'
+    '© 2026 Wilfrid Laurier University'
+    '</div>'
+    '</div>'
+
+    '</div>'
+    '</div>',
+    unsafe_allow_html=True)
 
 # ── Tabs ──────────────────────────────────────────
 tab1, tab2, tab3 = st.tabs([
-    "RECOMMENDATIONS",
-    "WATCH HISTORY",
-    "SYSTEM",
+    "For You",
+    "Watch History",
+    "System",
 ])
 
 
-# ── Tab 1: Recommendations ────────────────────────
+# ══════════════════════════════════════════════════
+# Tab 1 — Recommendations
+# ══════════════════════════════════════════════════
 with tab1:
-    # Top bar
-    top_col1, top_col2, top_col3 = \
-        st.columns([4, 2, 1])
+    hdr_c, _, btn_c = st.columns([5, 2, 1])
+    with hdr_c:
+        st.markdown(
+            f'<div class="nf-row-label">'
+            f'Top Picks for User {user_id}'
+            f'<span class="nf-row-sub">'
+            f'Personalised · HSTU Neural'
+            f'</span></div>',
+            unsafe_allow_html=True)
+    with btn_c:
+        if st.button("↺",
+                     use_container_width=True,
+                     key="refresh_recs"):
+            st.cache_data.clear()
+            st.rerun()
 
-    with top_col1:
-        st.markdown(f"""
-<div class="section-eyebrow">
-  Personalised for User {user_id}
-</div>
-""", unsafe_allow_html=True)
-
-    with top_col3:
-        refresh = st.button(
-            "↺ Refresh",
-            use_container_width=True)
-
-    # Fetch recs
     with st.spinner(""):
-        start    = time.time()
-        rec_data = get_recommendations(
-            user_id, top_k)
-        elapsed  = (time.time()-start)*1000
+        t0       = time.time()
+        rec_data = api_post(
+            "/recommend",
+            {"user_id": user_id,
+             "top_k":   top_k})
+        elapsed  = (time.time()-t0)*1000
 
     if "error" in rec_data:
-        st.markdown(f"""
-<div style="background:#1a0a0a;
-            border:1px solid #5a1a1a;
-            border-radius:8px;
-            padding:20px;
-            font-family:'JetBrains Mono',
-            monospace;font-size:12px;
-            color:#f87171;">
-  ⚠ API UNAVAILABLE — {rec_data['error']}<br><br>
-  <span style="color:#555;">
-    Start FastAPI:
-    uvicorn src.serving.fastapi_app:app
-    --port 8000
-  </span>
-</div>
-""", unsafe_allow_html=True)
+        st.markdown(
+            f'<div class="err-box">'
+            f'<strong>Service Unavailable</strong>'
+            f'<br>{rec_data["error"]}<br>'
+            f'<span style="opacity:0.6;">'
+            f'uvicorn src.serving.fastapi_app'
+            f':app --port 8000</span>'
+            f'</div>',
+            unsafe_allow_html=True)
     else:
         recs   = rec_data.get(
             'recommendations', [])
-        cached = rec_data.get(
-            'cached', False)
-        lat    = rec_data.get(
-            'latency_ms', 0)
+        cached = rec_data.get('cached', False)
+        lat    = rec_data.get('latency_ms', 0)
+        rid    = rec_data.get(
+            'request_id', '—')
 
-        # Meta strip
-        meta_html = f"""
-<div style="display:flex;gap:16px;
-            align-items:center;
-            margin-bottom:20px;
-            flex-wrap:wrap;">
-  <div class="{'pill-cached' if cached else 'pill-ok'}">
-    {'⚡ REDIS CACHE' if cached else '🤖 HSTU MODEL'}
-  </div>
-  <span style="font-family:'JetBrains Mono',
-               monospace;font-size:11px;
-               color:#555;letter-spacing:0.1em;">
+        src_badge = (
+            '<span class="src-cache">'
+            '⚡ Served from cache</span>'
+            if cached else
+            '<span class="src-model">'
+            '🧠 HSTU Neural Model</span>')
+
+        st.markdown(f"""
+<div class="nf-meta">
+  {src_badge}
+  <span class="nf-meta-item">
     {lat:.0f}ms
   </span>
-  <span style="font-family:'JetBrains Mono',
-               monospace;font-size:11px;
-               color:#555;letter-spacing:0.1em;">
-    {len(recs)} RESULTS
+  <span class="nf-meta-item">
+    {len(recs)} titles
   </span>
-  <span style="font-family:'JetBrains Mono',
-               monospace;font-size:11px;
-               color:#555;letter-spacing:0.1em;">
-    RID {rec_data.get('request_id','—')}
+  <span class="nf-meta-item"
+        style="color:{TEXT_LO};">
+    {rid}
   </span>
-</div>
-"""
-        st.markdown(meta_html,
-                    unsafe_allow_html=True)
-
-        if not recs:
-            st.markdown("""
-<div style="text-align:center;padding:60px;
-            color:#555;font-family:'JetBrains Mono',
-            monospace;font-size:12px;
-            letter-spacing:0.2em;">
-  NO RECOMMENDATIONS FOUND
 </div>
 """, unsafe_allow_html=True)
+
+        if not recs:
+            st.markdown(
+                '<div class="no-content">'
+                'No recommendations available'
+                '</div>',
+                unsafe_allow_html=True)
         else:
-            # Grid — 5 per row
-            cols_per_row = 5
-            for row_start in range(
-                    0, len(recs),
-                    cols_per_row):
-                row_recs = recs[
-                    row_start:
-                    row_start+cols_per_row]
-                cols = st.columns(
-                    len(row_recs))
+            per_row = 5
+            for rs in range(
+                    0, len(recs), per_row):
+                batch = recs[rs:rs+per_row]
+                cols  = st.columns(
+                    len(batch),
+                    gap="small")
 
                 for col, rec in zip(
-                        cols, row_recs):
+                        cols, batch):
                     with col:
-                        mid   = rec['movie_id']
+                        mid   = rec[
+                            'movie_id']
                         title = str(rec.get(
                             'title',
                             f'Movie {mid}'))
-                        score = float(rec.get(
-                            'score', 0))
+                        score = float(
+                            rec.get(
+                                'score', 0))
                         rank  = rec.get(
                             'rank', 0)
                         is_fb = rec.get(
                             'fallback', False)
 
-                        # Get poster
-                        m_row = movies[
+                        mrow = movies[
                             movies['movieId']
                             == mid
-                        ] if not movies.empty \
-                            else pd.DataFrame()
+                        ] if not movies\
+                            .empty \
+                            else \
+                            pd.DataFrame()
 
-                        poster_url = None
-                        if not m_row.empty:
-                            poster_url = \
-                                get_poster_url(
-                                    m_row.iloc[0])
+                        purl = get_poster(
+                            mrow.iloc[0]) \
+                            if not mrow\
+                            .empty \
+                            else None
 
-                        badge = (
-                            '<span class="pop-badge">'
-                            'POPULAR</span>'
+                        mp  = match_pct(score)
+                        typ = (
+                            '<span class='
+                            '"type-pop">'
+                            'Popular</span>'
                             if is_fb else
-                            '<span class="hstu-badge">'
-                            'HSTU</span>')
+                            '<span class='
+                            '"type-hstu">'
+                            'Neural</span>')
 
-                        if poster_url:
-                            st.markdown(
-                                f'<div class="movie-card">'
-                                f'<span class="rank-badge">'
-                                f'#{rank}</span>'
-                                f'{badge}'
-                                f'</div>',
-                                unsafe_allow_html=True)
+                        # Card
+                        st.markdown(
+                            '<div class='
+                            '"nf-card">',
+                            unsafe_allow_html=
+                            True)
+
+                        if purl:
                             st.image(
-                                poster_url,
-                                use_column_width=True)
+                                purl,
+                                use_column_width=
+                                True)
                         else:
                             st.markdown(
-                                f"""
-<div class="movie-card">
-  <span class="rank-badge">#{rank}</span>
-  {badge}
-  <div class="movie-poster-placeholder">🎬</div>
-</div>
-""", unsafe_allow_html=True)
+                                '<div class='
+                                '"nf-card-'
+                                'placeholder">'
+                                '🎬</div>',
+                                unsafe_allow_html=
+                                True)
 
-                        # Score bar
-                        pct = min(
-                            int(score*100), 100)
-                        st.markdown(f"""
-<div class="movie-info">
-  <div class="movie-title-card">
-    {title[:40]}
-  </div>
-  <div class="score-bar-wrap">
-    <div class="score-bar-fill"
-         style="width:{pct}%"></div>
-  </div>
-  <div class="score-label">
-    SCORE {score:.3f}
+                        st.markdown(
+                            f"""
+<div class="nf-card-overlay">
+  <div class="match-badge">{mp}</div>
+  <div class="nf-card-title">
+    {title[:38]}
   </div>
 </div>
-""", unsafe_allow_html=True)
+""",
+                            unsafe_allow_html=
+                            True)
 
-                        # Rating expander
+                        st.markdown(
+                            '</div>',
+                            unsafe_allow_html=
+                            True)
+
+                        # Below card
+                        st.markdown(
+                            f'<div style="'
+                            f'padding:6px 2px'
+                            f' 2px;">'
+                            f'<div style="'
+                            f'font-family:'
+                            f'Inter,sans-serif;'
+                            f'font-size:12px;'
+                            f'font-weight:600;'
+                            f'color:{TEXT_HI};'
+                            f'line-height:1.3;'
+                            f'margin-bottom:'
+                            f'4px;">'
+                            f'{title[:30]}'
+                            f'</div>'
+                            f'<div style="'
+                            f'display:flex;'
+                            f'align-items:'
+                            f'center;gap:6px;">'
+                            f'<span class='
+                            f'"match-badge">'
+                            f'{mp}</span>'
+                            f'{typ}'
+                            f'</div>'
+                            f'</div>',
+                            unsafe_allow_html=
+                            True)
+
                         with st.expander(
-                                f"Rate"):
+                                "Rate this"):
                             stars = \
                                 st.select_slider(
-                                    f"s{mid}",
+                                    f"s{mid}"
+                                    f"_{rs}",
                                     options=[
                                         "1 ★",
                                         "2 ★★",
                                         "3 ★★★",
                                         "4 ★★★★",
-                                        "5 ★★★★★"],
+                                        "5 ★★★★★"
+                                    ],
                                     label_visibility=
                                     "collapsed")
                             if st.button(
                                     "Submit",
-                                    key=f"b{mid}"):
-                                rating = int(
+                                    key=f"b"
+                                    f"{mid}_{rs}"):
+                                r_val = int(
                                     stars[0])
-                                ok = send_feedback(
-                                    user_id,
-                                    mid,
-                                    float(rating))
-                                if ok:
+                                ok = api_post(
+                                    "/feedback",
+                                    {
+                                        "user_id":
+                                        user_id,
+                                        "movie_id":
+                                        mid,
+                                        "rating":
+                                        float(
+                                            r_val),
+                                        "action":
+                                        "rate",
+                                    })
+                                if "error" \
+                                        not in ok:
                                     st.success(
-                                        "✓ Saved")
+                                        "Rated!")
                                     st.cache_data\
                                         .clear()
 
 
-# ── Tab 2: Watch History ──────────────────────────
+# ══════════════════════════════════════════════════
+# Tab 2 — Watch History
+# ══════════════════════════════════════════════════
 with tab2:
-    st.markdown(f"""
-<div class="section-eyebrow">
-  Watch History — User {user_id}
-</div>
-""", unsafe_allow_html=True)
+    st.markdown(
+        f'<div class="nf-row-label">'
+        f'Your Activity'
+        f'<span class="nf-row-sub">'
+        f'User {user_id}</span></div>',
+        unsafe_allow_html=True)
 
     if ratings.empty:
-        st.warning("No ratings data loaded")
+        st.markdown(
+            '<div class="no-content">'
+            'No data</div>',
+            unsafe_allow_html=True)
     else:
-        user_ratings = ratings[
+        ur = ratings[
             ratings['userId'] == user_id
         ].copy()
 
-        if user_ratings.empty:
-            st.markdown("""
-<div style="text-align:center;
-            padding:60px;
-            color:#555;
-            font-family:'JetBrains Mono',
-            monospace;font-size:12px;
-            letter-spacing:0.2em;">
-  NO HISTORY FOR THIS USER
-</div>
-""", unsafe_allow_html=True)
+        if ur.empty:
+            st.markdown(
+                '<div class="no-content">'
+                'No activity for this profile'
+                '</div>',
+                unsafe_allow_html=True)
         else:
             if not movies.empty:
-                user_ratings = user_ratings\
-                    .merge(
-                        movies[[
-                            'movieId',
-                            'title',
-                            'genres_list',
-                            'year']],
-                        on='movieId',
-                        how='left')
+                ur = ur.merge(
+                    movies[[
+                        'movieId',
+                        'title',
+                        'genres_list',
+                        'year',
+                        'poster_path']],
+                    on='movieId',
+                    how='left')
 
-            user_ratings['title'] = \
-                user_ratings['title'].fillna(
-                    user_ratings['movieId']\
-                    .astype(str).apply(
-                        lambda x: f"Movie {x}"))
+            ur['title'] = ur['title']\
+                .fillna(
+                    ur['movieId'].astype(str)
+                    .apply(
+                        lambda x:
+                        f"Movie {x}"))
+            ur = ur.sort_values(
+                'rating', ascending=False)
 
-            user_ratings = user_ratings\
-                .sort_values(
-                    'rating', ascending=False)
+            avg_r = ur['rating'].mean()
+            n_r   = len(ur)
+            top_r = (ur['rating']
+                     >= 4.0).sum()
 
-            # Stats row
-            avg_r = user_ratings[
-                'rating'].mean()
-            n_r   = len(user_ratings)
-            top_r = (user_ratings[
-                'rating'] >= 4.0).sum()
-
-            s1, s2, s3 = st.columns(3)
-            for col, val, lbl in [
-                (s1, n_r,           "MOVIES RATED"),
-                (s2, f"{avg_r:.1f}", "AVG RATING"),
-                (s3, top_r,          "TOP RATED (≥4)"),
+            # ── Stats row ─────────────────
+            c1, c2, c3 = st.columns(3)
+            for col, v, l in [
+                (c1, n_r, "Titles Rated"),
+                (c2, f"{avg_r:.1f}",
+                 "Avg Rating"),
+                (c3, int(top_r),
+                 "Loved (4+★)"),
             ]:
                 with col:
                     st.markdown(f"""
-<div class="stat-card">
-  <div class="stat-value">{val}</div>
-  <div class="stat-label">{lbl}</div>
+<div class="nf-stat">
+  <div class="nf-stat-val">{v}</div>
+  <div class="nf-stat-lbl">{l}</div>
 </div>
 """, unsafe_allow_html=True)
 
             st.markdown(
-                "<div style='height:20px'></div>",
+                "<div style='height:28px'>"
+                "</div>",
                 unsafe_allow_html=True)
 
-            # Top 10 list
-            st.markdown("""
-<div class="section-eyebrow">
-  Top Rated
-</div>
-""", unsafe_allow_html=True)
+            # ── Top rated grid ────────────
+            st.markdown(
+                '<div class="nf-row-label">'
+                'Highest Rated</div>',
+                unsafe_allow_html=True)
 
-            top10 = user_ratings.head(10)
-            rows_html = ""
-            for _, row in top10.iterrows():
-                title  = str(
-                    row.get('title', ''))[:45]
-                rating = float(row['rating'])
-                stars  = "★" * int(rating) + \
-                          "☆" * (5-int(rating))
-                year   = row.get('year', '')
-                year_s = f" · {int(year)}" \
-                    if pd.notna(year) \
-                    and year != '' else ""
+            top_movies = ur.head(20)
+            per_row    = 5
 
-                rows_html += f"""
-<div class="history-row">
-  <div>
-    <div class="history-title">
-      {title}
-      <span style="font-size:11px;
-                   color:#555;">{year_s}</span>
-    </div>
+            for rs in range(
+                    0, len(top_movies),
+                    per_row):
+                batch = top_movies.iloc[
+                    rs:rs+per_row]
+                cols  = st.columns(
+                    len(batch),
+                    gap="small")
+
+                for col, (_, row) in zip(
+                        cols,
+                        batch.iterrows()):
+                    with col:
+                        mid   = int(row[
+                            'movieId'])
+                        title = str(row[
+                            'title'])
+                        rt    = float(row[
+                            'rating'])
+                        yr    = row.get(
+                            'year', '')
+                        yr_s  = (
+                            str(int(
+                                float(yr)))
+                            if pd.notna(yr)
+                            and str(yr)
+                            not in (
+                                '', 'nan')
+                            else "")
+
+                        # Poster
+                        poster = str(row.get(
+                            'poster_path',
+                            ''))
+                        purl = (
+                            f"{TMDB_BASE}"
+                            f"{poster}"
+                            if poster not in (
+                                'nan','',
+                                'None')
+                            and poster
+                            .startswith('/')
+                            else None)
+
+                        # Star string
+                        stars = (
+                            "★" * int(rt) +
+                            "☆" * (
+                                5-int(rt)))
+
+                        # Match pct
+                        mp = int(
+                            min(rt/5*100,
+                                99))
+
+                        # Card
+                        st.markdown(
+                            '<div class='
+                            '"nf-card">',
+                            unsafe_allow_html=
+                            True)
+
+                        if purl:
+                            st.image(
+                                purl,
+                                use_column_width=
+                                True)
+                        else:
+                            st.markdown(
+                                '<div class='
+                                '"nf-card-'
+                                'placeholder"'
+                                '>🎬</div>',
+                                unsafe_allow_html=
+                                True)
+
+                        st.markdown(
+                            f"""
+<div class="nf-card-overlay">
+  <div class="match-badge">
+    {stars}
   </div>
-  <div class="history-rating">
-    {stars} {rating:.1f}
+  <div class="nf-card-title">
+    {title[:38]}
   </div>
 </div>
-"""
-            st.markdown(
-                f'<div style="background:'
-                f'var(--surface);border:'
-                f'1px solid var(--border);'
-                f'border-radius:8px;'
-                f'overflow:hidden;">'
-                f'{rows_html}</div>',
-                unsafe_allow_html=True)
+""",
+                            unsafe_allow_html=
+                            True)
+
+                        st.markdown(
+                            '</div>',
+                            unsafe_allow_html=
+                            True)
+
+                        # Below card
+                        st.markdown(
+                            f'<div style="'
+                            f'padding:6px 2px'
+                            f' 4px;">'
+                            f'<div style="'
+                            f'font-family:'
+                            f'Inter,sans-serif;'
+                            f'font-size:12px;'
+                            f'font-weight:600;'
+                            f'color:{TEXT_HI};'
+                            f'line-height:1.3;'
+                            f'margin-bottom:'
+                            f'3px;">'
+                            f'{title[:28]}'
+                            f'</div>'
+                            f'<div style="'
+                            f'font-family:'
+                            f'Inter,sans-serif;'
+                            f'font-size:11px;'
+                            f'color:{TEXT_LO};">'
+                            f'{yr_s}'
+                            f'{"  ·  " if yr_s else ""}'
+                            f'<span style="'
+                            f'color:#a3cf62;">'
+                            f'{stars}</span>'
+                            f'</div>'
+                            f'</div>',
+                            unsafe_allow_html=
+                            True)
 
             st.markdown(
-                "<div style='height:24px'></div>",
+                "<div style='height:28px'>"
+                "</div>",
                 unsafe_allow_html=True)
 
-            # Rating distribution
-            col_a, col_b = st.columns(2)
-
-            with col_a:
-                st.markdown("""
-<div class="section-eyebrow">
-  Rating Distribution
-</div>
-""", unsafe_allow_html=True)
-                dist = user_ratings[
-                    'rating']\
+            # ── Charts ────────────────────
+            ca, cb = st.columns(2)
+            with ca:
+                st.markdown(
+                    '<div class="nf-row-label"'
+                    ' style="font-size:15px;">'
+                    'Rating Distribution'
+                    '</div>',
+                    unsafe_allow_html=True)
+                dist = ur['rating']\
                     .value_counts()\
                     .sort_index()
                 st.bar_chart(
-                    dist,
-                    color="#f5a623")
+                    dist, color=ACCENT)
 
-            with col_b:
-                st.markdown("""
-<div class="section-eyebrow">
-  Genre Preferences
-</div>
-""", unsafe_allow_html=True)
-                genre_counts = {}
+            with cb:
+                st.markdown(
+                    '<div class="nf-row-label"'
+                    ' style="font-size:15px;">'
+                    'Top Genres</div>',
+                    unsafe_allow_html=True)
+                gc = {}
                 for _, row in \
-                        user_ratings.iterrows():
+                        ur.iterrows():
                     for g in safe_genres(
                             row.get(
                                 'genres_list')):
-                        genre_counts[g] = \
-                            genre_counts.get(
-                                g, 0) + 1
-
-                if genre_counts:
+                        gc[g] = \
+                            gc.get(g, 0)+1
+                if gc:
                     gdf = pd.DataFrame(
-                        list(genre_counts.items()),
+                        list(gc.items()),
                         columns=[
                             'Genre', 'Count']
                     ).sort_values(
@@ -1144,201 +1623,490 @@ with tab2:
                         ascending=False
                     ).head(8)
                     st.bar_chart(
-                        gdf.set_index('Genre'),
-                        color="#f5a623")
+                        gdf.set_index(
+                            'Genre'),
+                        color=ACCENT)
 
-
-# ── Tab 3: System ─────────────────────────────────
+# ══════════════════════════════════════════════════
+# Tab 3 — System
+# ══════════════════════════════════════════════════
 with tab3:
-    if st.button("↺ Refresh",
-                 key="refresh_metrics"):
-        st.cache_data.clear()
+    rc, _, rb = st.columns([4, 3, 1])
+    with rc:
+        st.markdown(
+            '<div class="nf-row-label">'
+            'System Overview</div>',
+            unsafe_allow_html=True)
+    with rb:
+        if st.button(
+                "↺ Refresh",
+                key="sys_ref",
+                use_container_width=True):
+            st.cache_data.clear()
+            st.rerun()
 
-    m = get_metrics()
-    c = get_cache_stats()
+    m = api_get("/metrics")
+    c = api_get("/cache/stats")
 
-    st.markdown("""
-<div class="section-eyebrow">
-  Performance
-</div>
-""", unsafe_allow_html=True)
+    hit  = c.get('hit_rate_pct', 0)
+    ccu  = c.get('cached_users', 0)
+    cmem = c.get('memory_used', 'N/A')
+    ccon = c.get('connected', False)
 
+    # ── Perf stats ────────────────────────
     mc = st.columns(4)
-    for col, val, lbl in [
+    for col, v, l in [
         (mc[0],
          m.get('total_requests', 0),
-         "TOTAL REQUESTS"),
+         "Requests"),
         (mc[1],
          f"{m.get('error_rate', 0):.1f}%",
-         "ERROR RATE"),
+         "Error Rate"),
         (mc[2],
          f"{m.get('latency_p50_ms', 0):.0f}ms",
-         "P50 LATENCY"),
+         "P50 Latency"),
         (mc[3],
          f"{m.get('latency_p99_ms', 0):.0f}ms",
-         "P99 LATENCY"),
+         "P99 Latency"),
     ]:
         with col:
-            st.markdown(f"""
-<div class="stat-card">
-  <div class="stat-value">{val}</div>
-  <div class="stat-label">{lbl}</div>
-</div>
-""", unsafe_allow_html=True)
+            st.markdown(
+                '<div class="nf-stat">'
+                '<div class="nf-stat-val">'
+                + str(v) +
+                '</div>'
+                '<div class="nf-stat-lbl">'
+                + l +
+                '</div>'
+                '</div>',
+                unsafe_allow_html=True)
 
     st.markdown(
-        "<div style='height:24px'></div>",
+        "<div style='height:28px'></div>",
         unsafe_allow_html=True)
 
-    # Cache + services
-    cc = st.columns(2)
-    with cc[0]:
-        st.markdown("""
-<div class="section-eyebrow">
-  Cache
-</div>
-""", unsafe_allow_html=True)
-        hit  = c.get('hit_rate_pct', 0)
-        ccon = c.get('connected', False)
-        st.markdown(f"""
-<div class="stat-card" style="text-align:left;
-     padding:20px;">
-  <div style="display:flex;justify-content:
-  space-between;margin-bottom:12px;">
-    <span style="font-family:'JetBrains Mono',
-    monospace;font-size:10px;color:#555;
-    letter-spacing:0.2em;">REDIS</span>
-    <span class="{'pill-ok' if ccon else 'pill-warn'}">
-      {'CONNECTED' if ccon else 'DOWN'}
-    </span>
-  </div>
-  <div class="stat-value">{hit}%</div>
-  <div class="stat-label">HIT RATE</div>
-  <div style="background:#1f1f1f;height:4px;
-  border-radius:2px;margin-top:12px;">
-    <div style="background:linear-gradient(
-    90deg,#c47f10,#f5a623);height:100%;
-    width:{hit}%;border-radius:2px;">
-    </div>
-  </div>
-  <div style="margin-top:12px;font-family:
-  'JetBrains Mono',monospace;font-size:10px;
-  color:#555;">
-    {c.get('cached_users', 0)} users cached ·
-    {c.get('memory_used', 'N/A')} memory
-  </div>
-</div>
-""", unsafe_allow_html=True)
+    # ── Cache + Services ──────────────────
+    cl, cr = st.columns(2)
 
-    with cc[1]:
-        st.markdown("""
-<div class="section-eyebrow">
-  Services
-</div>
-""", unsafe_allow_html=True)
+    with cl:
+        st.markdown(
+            '<div class="nf-row-label"'
+            ' style="font-size:15px;">'
+            'Cache Performance</div>',
+            unsafe_allow_html=True)
 
-        services = [
-            ("FASTAPI",    8000,
-             True),
-            ("BENTOML",    3001,
-             True),
-            ("REDIS",      6379,
+        conn_s = (
+            '<span style="'
+            'background:rgba(163,207,98,0.1);'
+            'border:1px solid '
+            'rgba(163,207,98,0.3);'
+            'color:#a3cf62;'
+            'font-family:Inter,sans-serif;'
+            'font-size:10px;font-weight:600;'
+            'padding:3px 8px;'
+            'border-radius:3px;">'
+            'Connected</span>'
+            if ccon else
+            '<span style="'
+            'background:rgba(229,9,20,0.1);'
+            'border:1px solid '
+            'rgba(229,9,20,0.3);'
+            'color:#e50914;'
+            'font-family:Inter,sans-serif;'
+            'font-size:10px;font-weight:600;'
+            'padding:3px 8px;'
+            'border-radius:3px;">'
+            'Offline</span>')
+
+        st.markdown(
+            '<div class="nf-cache-card">'
+            '<div style="display:flex;'
+            'justify-content:space-between;'
+            'align-items:center;'
+            'margin-bottom:4px;">'
+            '<span style="font-family:Inter,'
+            'sans-serif;font-size:13px;'
+            'font-weight:700;color:'
+            + TEXT_HI + ';">Redis Cache</span>'
+            + conn_s +
+            '</div>'
+            '<div class="nf-stat-val"'
+            ' style="font-size:42px;">'
+            + str(hit) + '%'
+            '</div>'
+            '<div class="nf-stat-lbl">'
+            'Hit Rate</div>'
+            '<div class="nf-progress">'
+            '<div class="nf-progress-fill"'
+            ' style="width:' + str(hit) + '%">'
+            '</div></div>'
+            '<div style="font-family:Inter,'
+            'sans-serif;font-size:12px;'
+            'color:' + TEXT_LO + ';">'
+            + str(ccu) + ' profiles cached · '
+            + str(cmem) + ' used'
+            '</div></div>',
+            unsafe_allow_html=True)
+
+    with cr:
+        st.markdown(
+            '<div class="nf-row-label"'
+            ' style="font-size:15px;">'
+            'Services</div>',
+            unsafe_allow_html=True)
+
+        svcs = [
+            ("FastAPI",    "8000", True),
+            ("BentoML",    "3001", True),
+            ("Redis",      "6379",
              m.get('redis_connected',
                    False)),
-            ("KAFKA",      9092,
+            ("Kafka",      "9092",
              m.get('kafka_connected',
                    False)),
-            ("PROMETHEUS", 9090,
-             True),
-            ("GRAFANA",    3000,
-             True),
+            ("Prometheus", "9090", True),
+            ("Grafana",    "3000", True),
+            ("MLflow",     "5000", True),
+            ("Qdrant",     "6333", True),
+            ("PostgreSQL", "5432", True),
         ]
 
-        rows = ""
-        for svc, port, ok in services:
-            dot   = "#4ade80" if ok else "#f87171"
-            color = "#f0ede8" if ok else "#555"
-            rows += f"""
-<div style="display:flex;justify-content:
-space-between;align-items:center;
-padding:10px 16px;
-border-bottom:1px solid #2a2a2a;">
-  <div style="display:flex;
-  align-items:center;gap:10px;">
-    <div style="width:6px;height:6px;
-    border-radius:50%;
-    background:{dot};"></div>
-    <span style="font-family:'JetBrains Mono',
-    monospace;font-size:11px;
-    color:{color};
-    letter-spacing:0.12em;">{svc}</span>
-  </div>
-  <span style="font-family:'JetBrains Mono',
-  monospace;font-size:10px;
-  color:#555;">:{port}</span>
-</div>
-"""
+        svc_rows = ""
+        for name, port, ok in svcs:
+            dot_style = (
+                'background:#a3cf62;'
+                'animation:pulse 2.5s infinite;'
+                if ok else
+                'background:#e50914;')
+            color = TEXT_HI if ok else TEXT_LO
+            svc_rows += (
+                '<div class="nf-svc">'
+                '<div style="display:flex;'
+                'align-items:center;gap:10px;">'
+                '<div style="width:7px;'
+                'height:7px;border-radius:50%;'
+                + dot_style + '"></div>'
+                '<span style="font-family:Inter,'
+                'sans-serif;font-size:13px;'
+                'font-weight:600;color:'
+                + color + ';">'
+                + name +
+                '</span></div>'
+                '<span style="font-family:'
+                'JetBrains Mono,monospace;'
+                'font-size:11px;color:'
+                + TEXT_LO + ';">:'
+                + port +
+                '</span></div>')
+
         st.markdown(
-            f'<div style="background:'
-            f'var(--surface);border:'
-            f'1px solid var(--border);'
-            f'border-radius:8px;'
-            f'overflow:hidden;">'
-            f'{rows}</div>',
+            '<div style="background:'
+            + SURFACE + ';border:1px solid '
+            + BORDER + ';border-radius:4px;'
+            'overflow:hidden;">'
+            + svc_rows +
+            '</div>',
             unsafe_allow_html=True)
 
     st.markdown(
-        "<div style='height:24px'></div>",
+        "<div style='height:28px'></div>",
         unsafe_allow_html=True)
 
-    # Architecture
-    st.markdown("""
-<div class="section-eyebrow">
-  Architecture
-</div>
-""", unsafe_allow_html=True)
+    # ── Architecture ──────────────────────
+    st.markdown(
+        '<div class="nf-row-label"'
+        ' style="font-size:15px;">'
+        'System Architecture</div>',
+        unsafe_allow_html=True)
 
-    st.markdown("""
-<div class="arch-box">
-  <span style="color:#f5a623;">USER BROWSER</span>
-  <br>↓
-  <br><span style="color:#f0ede8;">
-    STREAMLIT :8501
-  </span>
-  <span style="color:#555;">
-    — Frontend UI
-  </span>
-  <br>↓
-  <br><span style="color:#f0ede8;">
-    FASTAPI :8000
-  </span>
-  <span style="color:#555;">
-    — Rate limit · Auth · CORS
-  </span>
-  <br>↓ cache hit &nbsp;&nbsp;&nbsp;&nbsp; ↓ miss
-  <br><span style="color:#4ade80;">
-    REDIS :6379
-  </span>
-  &nbsp;&nbsp;&nbsp;&nbsp;
-  <span style="color:#60a5fa;">
-    BENTOML :3001
-  </span>
-  <br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-  ↓
-  <br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-  <span style="color:#60a5fa;">HSTU MODEL</span>
-  <br>↓
-  <br><span style="color:#f0ede8;">
-    KAFKA :9092
-  </span>
-  <span style="color:#555;">
-    — Event streaming
-  </span>
-  <br>↓
-  <br><span style="color:#f0ede8;">
-    PROMETHEUS :9090 → GRAFANA :3000
-  </span>
-</div>
-""", unsafe_allow_html=True)
+    def make_tags(tags):
+        html = ""
+        for t in tags:
+            html += (
+                '<span style="'
+                'background:' + BG3 + ';'
+                'border:1px solid ' + BORDER + ';'
+                'color:' + TEXT_MID + ';'
+                'font-family:Inter,sans-serif;'
+                'font-size:10px;'
+                'font-weight:500;'
+                'padding:2px 8px;'
+                'border-radius:3px;'
+                'display:inline-block;'
+                'margin:2px 2px 2px 0;">'
+                + t +
+                '</span>')
+        return html
+
+    def make_row(layer, title,
+                 port_str, tags,
+                 border_top=True,
+                 highlight=False):
+        bg_color = (
+            'rgba(229,9,20,0.04)'
+            if highlight and dark else
+            'rgba(229,9,20,0.02)'
+            if highlight and not dark else
+            'transparent')
+        border_css = (
+            'border-top:1px solid '
+            + BORDER + ';'
+            if border_top else '')
+        port_html = (
+            '<span style="'
+            'font-family:JetBrains Mono,'
+            'monospace;font-size:10px;'
+            'color:' + TEXT_LO + ';'
+            'font-weight:400;'
+            'margin-left:8px;">'
+            + port_str +
+            '</span>'
+            if port_str else '')
+
+        return (
+            '<div style="padding:16px 20px;'
+            + border_css +
+            'background:' + bg_color + ';">'
+            '<div style="display:flex;'
+            'align-items:flex-start;'
+            'gap:16px;">'
+            '<div style="width:120px;'
+            'flex-shrink:0;'
+            'font-family:Inter,sans-serif;'
+            'font-size:10px;font-weight:700;'
+            'color:' + TEXT_LO + ';'
+            'letter-spacing:0.15em;'
+            'text-transform:uppercase;'
+            'padding-top:2px;">'
+            + layer +
+            '</div>'
+            '<div style="flex:1;">'
+            '<div style="'
+            'font-family:Inter,sans-serif;'
+            'font-size:13px;font-weight:700;'
+            'color:' + TEXT_HI + ';'
+            'margin-bottom:8px;">'
+            + title + port_html +
+            '</div>'
+            '<div>'
+            + make_tags(tags) +
+            '</div>'
+            '</div>'
+            '</div>'
+            '</div>')
+
+    rows = ""
+
+    rows += make_row(
+        "Frontend", "Streamlit", ":8501",
+        ["Python 3.12",
+         "Netflix-style UI",
+         "Dark / Light Mode",
+         "TMDB Posters",
+         "Real-time Metrics",
+         "Inline Feedback"],
+        border_top=False)
+
+    rows += make_row(
+        "API Gateway", "FastAPI", ":8000",
+        ["Rate Limiting 100/min",
+         "API Key Auth",
+         "CORS Middleware",
+         "Pydantic v2",
+         "OpenAPI / Swagger",
+         "Request ID Tracking",
+         "JSON Logging",
+         "Prometheus Metrics"])
+
+    rows += make_row(
+        "Model Serving",
+        "BentoML 1.x", ":3001",
+        ["HSTU Ranker",
+         "PyTorch Inference",
+         "ONNX Export",
+         "Popularity Padding",
+         "Cold Start Fallback",
+         "Deduplication"])
+
+    rows += make_row(
+        "Cache Layer",
+        "Redis 7", ":6379",
+        ["Per-user Caching",
+         "TTL 1 Hour",
+         "Feedback Invalidation",
+         "Cache Warming",
+         str(hit) + "% Hit Rate",
+         str(ccu) + " Profiles Cached"])
+
+    rows += make_row(
+        "Streaming",
+        "Apache Kafka", ":9092",
+        ["user-interactions topic",
+         "recommendations topic",
+         "dead-letter queue",
+         "Online Model Updates",
+         "Acks=all Durability",
+         "kafka-python-ng",
+         "cp-kafka:7.6.0"])
+
+    rows += make_row(
+        "Observability",
+        "Prometheus + Grafana",
+        ":9090 / :3000",
+        ["6 Custom Metrics",
+         "p50 / p95 / p99",
+         "Cache Hit Rate",
+         "Request Volume",
+         "Error Rate",
+         "Evidently AI Drift",
+         "15s Scrape Interval",
+         "7-Panel Dashboard"])
+
+    rows += make_row(
+        "Data & MLOps",
+        "Full ML Pipeline", "",
+        ["PySpark ETL",
+         "26M Ratings",
+         "Delta Lake",
+         "AWS S3",
+         "Feast Feature Store",
+         "MLflow Tracking",
+         "DVC Versioning",
+         "Prefect Orchestration",
+         "Great Expectations",
+         "Qdrant Vector DB",
+         "PostgreSQL"])
+
+    rows += make_row(
+        "Deployment",
+        "Production Infrastructure", "",
+        ["Docker Compose",
+         "Terraform IaC",
+         "AWS EKS / GKE",
+         "Kubernetes",
+         "Helm Charts",
+         "Argo CD GitOps",
+         "Argo Rollouts",
+         "Canary Deployments",
+         "GitHub Actions CI/CD",
+         "Istio Service Mesh"])
+
+    rows += make_row(
+        "Retrieval",
+        "Two-Stage Pipeline", "",
+        ["GRank (WWW 2026)",
+         "TIGER Generative",
+         "Qdrant HNSW ANN",
+         "e5-large Embeddings",
+         "CLIP Multimodal",
+         "Ollama RAG",
+         "500 Candidates"])
+
+    rows += make_row(
+        "Ranking",
+        "Neural Rankers", "",
+        ["HSTU",
+         "Netflix FM",
+         "OneRec",
+         "LightGCN",
+         "BERT4Rec",
+         "DPO Alignment",
+         "Multi-task",
+         "MMR Re-ranking",
+         "IPS Debiasing",
+         "FM-Intent",
+         "LLM Explainability",
+         "Fairness Calibration"])
+
+    rows += make_row(
+        "Evaluation",
+        "8-Metric Framework", "",
+        ["NDCG@10",
+         "Precision@K",
+         "Recall@K",
+         "MAP",
+         "MRR",
+         "Coverage",
+         "Diversity",
+         "Novelty",
+         "5-Fold Temporal CV",
+         "IPS Correction",
+         "A/B Testing",
+         "p < 0.05 Significance"])
+
+    # ── Key results row ───────────────────
+    result_cards = ""
+    for v, l in [
+        ("+22%",  "NDCG vs CF"),
+        ("0.022", "HSTU NDCG@10"),
+        ("88%",   "Cache Hit Rate"),
+        ("13ms",  "P50 Latency"),
+        ("-63%",  "IPS Correction"),
+        ("4",     "Domains"),
+        ("0",     "Code Changes"),
+        ("15+",   "Models Built"),
+        ("26M",   "Ratings"),
+        ("9K",    "Movies"),
+    ]:
+        result_cards += (
+            '<div style="'
+            'text-align:center;'
+            'padding:8px 14px;'
+            'background:' + BG3 + ';'
+            'border:1px solid ' + BORDER + ';'
+            'border-radius:4px;">'
+            '<div style="'
+            'font-family:Inter,sans-serif;'
+            'font-size:22px;'
+            'font-weight:900;'
+            'color:' + ACCENT + ';'
+            'letter-spacing:-0.02em;'
+            'line-height:1;">'
+            + v +
+            '</div>'
+            '<div style="'
+            'font-family:Inter,sans-serif;'
+            'font-size:9px;font-weight:700;'
+            'color:' + TEXT_LO + ';'
+            'letter-spacing:0.1em;'
+            'text-transform:uppercase;'
+            'margin-top:4px;">'
+            + l +
+            '</div>'
+            '</div>')
+
+    rows += (
+        '<div style="'
+        'padding:20px;'
+        'border-top:1px solid ' + BORDER + ';'
+        'background:'
+        + ('rgba(229,9,20,0.04)'
+           if dark else
+           'rgba(229,9,20,0.02)') + ';'
+        'display:flex;'
+        'align-items:flex-start;'
+        'gap:16px;">'
+        '<div style="width:120px;'
+        'flex-shrink:0;'
+        'font-family:Inter,sans-serif;'
+        'font-size:10px;font-weight:700;'
+        'color:' + TEXT_LO + ';'
+        'letter-spacing:0.15em;'
+        'text-transform:uppercase;'
+        'padding-top:6px;">'
+        'Key Results</div>'
+        '<div style="flex:1;display:flex;'
+        'gap:8px;flex-wrap:wrap;">'
+        + result_cards +
+        '</div>'
+        '</div>')
+
+    st.markdown(
+        '<div style="'
+        'background:' + BG2 + ';'
+        'border:1px solid ' + BORDER + ';'
+        'border-radius:4px;'
+        'overflow:hidden;">'
+        + rows +
+        '</div>',
+        unsafe_allow_html=True)
