@@ -1120,7 +1120,7 @@ st.markdown(
     'font-size:10px;font-weight:400;'
     'color:' + TEXT_LO + ';'
     'margin-top:1px;">'
-    '© 2026 Wilfrid Laurier University'
+    '© Adarsha Ghimire'
     '</div>'
     '</div>'
 
