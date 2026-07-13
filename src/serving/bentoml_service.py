@@ -152,13 +152,16 @@ class HSTURanker(nn.Module):
 
     def predict(self, history, top_k=10):
         with torch.no_grad():
-            u  = self.encode_user(history)
-            sc = torch.matmul(
+            u       = self.encode_user(history)
+            sc      = torch.matmul(
                 u, self.item_emb.weight.T)
             sc[:, :self.offset] = \
                 float('-inf')
-            return torch.topk(
+            # topk returns (values, indices)
+            # we need INDICES not values
+            values, indices = torch.topk(
                 sc, top_k, dim=-1)
+            return indices, values
 
 
 # ── Load model + vocab once at startup ────────────
