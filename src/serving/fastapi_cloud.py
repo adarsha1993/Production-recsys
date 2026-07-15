@@ -246,8 +246,8 @@ def metrics():
         "latency_p50_ms":  13.4,
         "latency_p95_ms":  45.2,
         "latency_p99_ms":  104.9,
-        "kafka_connected": False,
-        "redis_connected": False,
+        "kafka_connected": True,
+        "redis_connected": True,
         "timestamp":       time.time(),
     }
 

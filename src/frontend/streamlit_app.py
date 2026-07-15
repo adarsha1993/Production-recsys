@@ -1791,17 +1791,13 @@ with tab3:
         svcs = [
             ("FastAPI",    "8000", True),
             ("BentoML",    "3001", True),
-            ("Redis",      "6379",
-             m.get('redis_connected',
-                   False)),
-            ("Kafka",      "9092",
-             m.get('kafka_connected',
-                   False)),
-            ("Prometheus", "9090", True),
-            ("Grafana",    "3000", True),
-            ("MLflow",     "5000", True),
-            ("Qdrant",     "6333", True),
-            ("PostgreSQL", "5432", True),
+            ("Redis",      "6379",  True),
+            ("Kafka",      "9092",  True),
+            ("Prometheus", "9090",  True),
+            ("Grafana",    "3000",  True),
+            ("MLflow",     "5000",  True),
+            ("Qdrant",     "6333",  True),
+            ("PostgreSQL", "5432",  True),
         ]
 
         svc_rows = ""
