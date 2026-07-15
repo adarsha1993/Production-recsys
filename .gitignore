@@ -69,3 +69,8 @@ deployment/docker/volumes/
 # ── Great Expectations ────────────────────────────
 great_expectations/uncommitted/
 /data
+!data/
+!data/processed/
+!data/processed/movies_master.csv
+!data/processed/ratings_cleaned.csv
+!data/processed/precomputed_recs.json
