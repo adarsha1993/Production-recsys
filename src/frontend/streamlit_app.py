@@ -23,7 +23,9 @@ sys.path.insert(0, str(BASE))
 load_dotenv(BASE / '.env')
 
 # ── Config ────────────────────────────────────────
-API_URL      = "http://localhost:8000"
+API_URL = os.getenv(
+    "API_URL",
+    "https://production-recsys.onrender.com")
 TMDB_BASE    = "https://image.tmdb.org/t/p/w342"
 TMDB_API_KEY = os.getenv("TMDB_API_KEY", "")
 
@@ -1154,15 +1156,39 @@ with tab1:
                      use_container_width=True,
                      key="refresh_recs"):
             st.cache_data.clear()
+            # Clear session rec cache
+            if 'last_recs' in \
+                    st.session_state:
+                del st.session_state[
+                    'last_recs']
             st.rerun()
 
-    with st.spinner(""):
-        t0       = time.time()
-        rec_data = api_post(
-            "/recommend",
-            {"user_id": user_id,
-             "top_k":   top_k})
-        elapsed  = (time.time()-t0)*1000
+    # Cache key includes user + top_k
+    cache_key = f"{user_id}_{top_k}"
+
+    if st.session_state.get(
+            'rec_cache_key') != cache_key \
+            or 'last_recs' not in \
+            st.session_state:
+        with st.spinner(""):
+            t0       = time.time()
+            rec_data = api_post(
+                "/recommend",
+                {"user_id": user_id,
+                 "top_k":   top_k})
+            elapsed  = (
+                time.time()-t0)*1000
+        st.session_state[
+            'last_recs']      = rec_data
+        st.session_state[
+            'rec_cache_key']  = cache_key
+        st.session_state[
+            'rec_elapsed']    = elapsed
+    else:
+        rec_data = st.session_state[
+            'last_recs']
+        elapsed  = st.session_state[
+            'rec_elapsed']
 
     if "error" in rec_data:
         st.markdown(
@@ -1176,7 +1202,7 @@ with tab1:
             unsafe_allow_html=True)
     else:
         recs   = rec_data.get(
-            'recommendations', [])
+            'recommendations', [])[:top_k]
         cached = rec_data.get('cached', False)
         lat    = rec_data.get('latency_ms', 0)
         rid    = rec_data.get(
@@ -1233,6 +1259,13 @@ with tab1:
                                 'score', 0))
                         rank  = rec.get(
                             'rank', 0)
+                        # Fix rank for
+                        # sliced recs
+                        if rank == 0:
+                            rank = rs + \
+                                list(batch)\
+                                .index(rec)\
+                                + 1
                         is_fb = rec.get(
                             'fallback', False)
 
